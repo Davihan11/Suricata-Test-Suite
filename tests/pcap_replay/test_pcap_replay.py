@@ -36,7 +36,7 @@ from conftest import (
     ],
     ids=["norules", "rules"],
 )
-def test_trex_one_port(
+def test_pcap_replay(
     request: pytest.FixtureRequest,
     trex_generators: dict,
     result_path: str,

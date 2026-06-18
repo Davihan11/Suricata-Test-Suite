@@ -100,7 +100,7 @@ def pytest_addoption(parser):
         help=("Specify for how long to wait before measuring statistics"),
     )
     parser.addoption(
-        "--pcap-file-stl",
+        "--pcap-replay",
         type=str,
         default=str(
             Path(__file__).parent
@@ -111,7 +111,7 @@ def pytest_addoption(parser):
             / "upf_dns.pcap"
         ),
         action="store",
-        help=("Change the pcap file (path) that Trex pushes remote in STL mode."),
+        help=("Pcap file to replay in pcap_replay."),
     )
     parser.addoption(
         "--target-mac",
@@ -208,7 +208,7 @@ def get_heatup_duration(request):
 
 @pytest.fixture()
 def get_path_to_pcap(request):
-    return request.config.getoption("--pcap-file-stl")
+    return request.config.getoption("--pcap-replay")
 
 
 @pytest.fixture()
