@@ -60,7 +60,7 @@ def get_max_speed(graph_bars):
     return max_speed + 3
 
 def plot_graph(graph_bars, network_cards):
-    species = cards = [card.strip() for card in network_cards.split(",")] if network_cards else []
+    species = [card.strip() for card in network_cards.split(",")] if network_cards else []
     no_rules = []
     software_rules = []
     rte_flow_rules = []
@@ -102,7 +102,6 @@ def plot_graph(graph_bars, network_cards):
 
 def main (files, network_cards):
     graph_bars = []
-    y_axis = []
     for file in files:
 
 

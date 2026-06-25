@@ -9,7 +9,7 @@ import time
 import os.path
 
 from lbr_testsuite.executable import executable, remote_executor, ExecutableProcessError
-from util.suri_util import get_rx_packets_from_file, is_running
+from util.suri_util import is_running
 from typing import List
 
 
@@ -141,7 +141,7 @@ class Suricata_manager():
         self.rules_file = rules_file
 
     def get_path_to_binary(self) -> str:
-        process_copy_conf_to_remote = executable.Tool(f"which suricata",
+        process_copy_conf_to_remote = executable.Tool("which suricata",
                                                         sudo=True,
                                                         executor=self.host_executor,
                                                         failure_verbosity="no-error"
@@ -161,13 +161,13 @@ class Suricata_manager():
         process_set_permissions.run()
 
     def kill(self):
-        proccess_kill = executable.Tool(f"pkill Suricata-Main || true",
+        proccess_kill = executable.Tool("pkill Suricata-Main || true",
                                             sudo=True,
                                             executor=self.host_executor)
         proccess_kill.run()
 
     def is_alive(self):
-        process_find_suri_process = executable.Tool(f"ps aux | grep suricata | grep -v grep || true",
+        process_find_suri_process = executable.Tool("ps aux | grep suricata | grep -v grep || true",
                                             sudo=True,
                                             executor=self.host_executor
                                             )
@@ -183,7 +183,7 @@ class Suricata_manager():
         while not can_continue:
             time.sleep(1)
             self.last_start_delay += 1
-            process_wait_on_start = executable.Tool(f"suricatasc -c uptime",
+            process_wait_on_start = executable.Tool("suricatasc -c uptime",
                                         sudo=True,
                                         executor=self.host_executor,
                                         failure_verbosity="no-error"
@@ -204,7 +204,7 @@ class Suricata_manager():
         can_continue = False
         while not can_continue:
             time.sleep(3)
-            process_wait_on_end = executable.Tool(f"suricatasc -c uptime",
+            process_wait_on_end = executable.Tool("suricatasc -c uptime",
                                         sudo=True,
                                         executor=self.host_executor,
                                         failure_verbosity="no-error"
@@ -275,7 +275,7 @@ class Suricata_manager():
         """Get PID of running Suricata and kill it with SIGTERM.
             Fetch remote files onto local machine.
         """
-        proccess_get_pid = executable.Tool(f"pidof suricata",
+        proccess_get_pid = executable.Tool("pidof suricata",
                                     sudo=True,
                                     executor=self.host_executor,
                                     failure_verbosity="no-error")

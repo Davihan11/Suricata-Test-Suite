@@ -198,7 +198,7 @@ def return_filename(pcap_filename):
 
 def send_pcap_to_trex(pcap_filename, request):
 
-    pcaps_dir_trex = executable.Tool(f'mkdir -p /tmp/pcaps/ && chmod 777 /tmp/pcaps/',
+    pcaps_dir_trex = executable.Tool('mkdir -p /tmp/pcaps/ && chmod 777 /tmp/pcaps/',
                                         executor=get_trex_executor(request),
                                         sudo=True
                                         )
@@ -217,12 +217,12 @@ def suri_interface_bind(request):
         dpdk_match = re.match(r"dpdk.interfaces\[[0-9]+\].interface", parameter_path)
         af_packet_match = re.match(r"af-packet\[[0-9]+\].interface", parameter_path)
 
-        if dpdk_match != None:
+        if dpdk_match is not None:
             return (request.node.callspec.params["params"][parameter_path], "dpdk")
-        elif af_packet_match != None:
+        elif af_packet_match is not None:
             return (request.node.callspec.params["params"][parameter_path], "af-packet")
 
-    assert dpdk_match != None or af_packet_match != None
+    assert dpdk_match is not None or af_packet_match is not None
 
 @pytest.fixture(autouse=True)
 def bind(request):
@@ -283,7 +283,7 @@ def assert_available_machines(request) -> None:
                                         )
     process_get_pcie_match.run()
 
-    print_pcie_match = executable.Tool(f"cat /tmp/pcie_count",
+    print_pcie_match = executable.Tool("cat /tmp/pcie_count",
                                         sudo=True,
                                         executor=get_suri_executor(request),
                                         )
@@ -293,13 +293,13 @@ def assert_available_machines(request) -> None:
     assert int(stdout) > 0, "Interface on host not found"
 
 def hugepages_allocated(request) -> bool:
-    process_cat_hugepages_count = executable.Tool(f"cat /proc/meminfo | grep 'HugePages_Free:' > /tmp/hugepages_allocated_info",
+    process_cat_hugepages_count = executable.Tool("cat /proc/meminfo | grep 'HugePages_Free:' > /tmp/hugepages_allocated_info",
                                         executor=get_suri_executor(request),
                                         sudo=True,
                                         )
     process_cat_hugepages_count.run()
 
-    process_get_hugepages_count_str = executable.Tool(f"cat /tmp/hugepages_allocated_info",
+    process_get_hugepages_count_str = executable.Tool("cat /tmp/hugepages_allocated_info",
                                         sudo=True,
                                         executor=get_suri_executor(request),
                                         )
@@ -367,13 +367,13 @@ def filters_apply(parametrize_args):
             dpdk_match = re.match(r"dpdk.interfaces\[[0-9]+\].interface", parameter)
             af_packet_match = re.match(r"af-packet\[[0-9]+\].interface", parameter)
 
-            if dpdk_match != None:
+            if dpdk_match is not None:
                 new_filter = filter.get("dpdk", [])
                 if all(f(parameter_comb) for f in new_filter):
                     filtered_combs.append(parameter_comb)
                 break
 
-            elif af_packet_match != None:
+            elif af_packet_match is not None:
                 new_filter = filter.get("af-packet", [])
                 if all(f(parameter_comb) for f in new_filter):
                     filtered_combs.append(parameter_comb)
@@ -451,7 +451,7 @@ def af_packet_get_queues_rx_descriptors(param_file, params):
 
         af_packet_match = re.match(r"af-packet\[[0-9]+\].interface", parameter_path)
 
-        if af_packet_match != None:
+        if af_packet_match is not None:
              key = af_packet_match.group(0)
              parameters = params[-1]
         else:

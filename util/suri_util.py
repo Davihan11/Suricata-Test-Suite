@@ -188,7 +188,7 @@ def get_stats_from_string(lines: str) -> str:
 def is_running(stdout: str) -> bool:
     try:
         json_loaded = json.loads(stdout)
-    except:
+    except Exception:
         return False
     return jq.compile(".return").input(json_loaded).first() == "OK"
 

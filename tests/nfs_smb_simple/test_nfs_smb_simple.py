@@ -12,16 +12,13 @@ Usage:
 
 
 import pytest
-import os
 import signal
 
-from pathlib import Path
 from typing import List
 from lbr_testsuite import trex
 from util.suricata_manager import Suricata_manager, SuriDown
 from util.suri_util import save_stats, TestInfo, RunInfo
 from assets.trex.traffic_profiles import nfs_smb_trex_profile
-from functools import partial
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
 
 TARGET_VLAN = 15 # claret
@@ -80,7 +77,7 @@ def test_nfs_smb (
     trex_multipliers: List[float] = get_trex_multi(get_settings_file, suri_conf.server, suri_conf.pcie, test_variant_name)
 
     if not trex_multipliers:
-        print(f"ERROR NO multiplier!")
+        print("ERROR NO multiplier!")
         return
 
     for idx, multiplier in enumerate(trex_multipliers, 1):

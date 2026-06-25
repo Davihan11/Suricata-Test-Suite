@@ -12,16 +12,13 @@ Usage:
 
 
 import pytest
-import os
 import signal
 
-from pathlib import Path
 from typing import List
 from lbr_testsuite import trex
 from util.suricata_manager import Suricata_manager, SuriDown
 from util.suri_util import save_stats, TestInfo, RunInfo
 from assets.trex.traffic_profiles import http_https_smb_trex_profile
-from functools import partial
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
 
 TARGET_VLAN = 15 # claret
