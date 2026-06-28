@@ -32,8 +32,7 @@ binary_search_usage(){
   echo "-mm   | --min-multiplier [FLOAT] Lowest bound of the search range. Default is 0.0"
   echo "-xm   | --max-multiplier [FLOAT] Highest bound of the search range. Default is 10.0"
   echo "-dr   | --drop-rate [FLOAT] Target drop rate in %. Default is 1%"
-  echo "-dt   | --delta [FLOAT] Minimum delta in multipliers between cycles before ending the cycle."
-  echo "                        Default is 0.05"
+  echo "-dt   | --delta [FLOAT] Minimum delta in multipliers between cycles before ending the cycle. Default is 0.05"
   echo "-mc   | --max-cycles [INT] Maximum number of binary search iterations. Default is 20"
   echo "-rp   | --repetitions [INT] How many times to repeat the test at each multiplier. Default is 2"
 }
