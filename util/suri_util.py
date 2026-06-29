@@ -376,8 +376,8 @@ def get_drop_rate():
         None
     Output:
         Drop rate in % <0, 100>. [FLOAT]
-       -1 -> Error may have occured.
-    '''
+       -1 -> Error may have occurred.
+    """
     path = Path(__file__).resolve().parent.parent / "results" / "artefacts"
     if path.exists() and path.is_dir():
 

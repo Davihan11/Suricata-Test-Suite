@@ -93,8 +93,8 @@ def test_function(target: float, multiplier: float, repetitions: int, function):
         print(f"\n[PROGRESS] Repetition number: {i}/{repetitions} of multiplier {multiplier}.")
         function(multiplier)
         drop_rate_addition = get_drop_rate()
-        if(drop_rate_addition == -1.0):
-            pytest.fail(f"Error occured while getting drop rate: {drop_rate_addition}")
+        if drop_rate_addition == -1.0:
+            pytest.fail(f"Error occurred while getting drop rate: {drop_rate_addition}")
         drop_rate_arr.append(drop_rate_addition)
         print(f"[INFO] Drop rate: {drop_rate_arr[-1]:.4f}% for repetition {i}.")
 
