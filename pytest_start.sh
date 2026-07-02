@@ -41,6 +41,8 @@ while [ "$#" -gt 0 ]; do
     -p2 | --trex-server-port-2) trex_server_port_2=$2; shift 2 ;;
     -p | --pcie) pcies+=" "${2}; shift 2 ;;
     -ht | --heatup) heatup_duration=$2; shift 2 ;;
+    -sl | --suite-log-level) suite_log_level=$2; shift 2 ;;
+    -nsf | --no-suite-log-file) no_suite_log_file=true; shift ;;
     -f | --filter) case $2 in rules) filter="rules and not norules";;
                         norules) filter="norules";;
                         *) filter="$2";;
@@ -149,6 +151,18 @@ if [ -z "$heatup_duration" ]; then
     fi
 fi
 
+if [ -z "$suite_log_level" ]; then
+    if [ ! -z "$DEFAULT_SUITE_LOG_LEVEL" ]; then
+        suite_log_level="$DEFAULT_SUITE_LOG_LEVEL"
+    else
+        suite_log_level="INFO"
+    fi
+fi
+
+if [ "$no_suite_log_file" != true ] && [ "$DEFAULT_NO_SUITE_LOG_FILE" = true ]; then
+    no_suite_log_file=true
+fi
+
 if [ -z "$pcies" ]; then
     if [ ! -z "$DEFAULT_PCIES" ]; then
         pcies="$DEFAULT_PCIES"
@@ -158,6 +172,11 @@ if [ -z "$pcies" ]; then
     fi
 fi
 
+extra_args+=("--suite-log-level=$suite_log_level")
+
+if [ "$no_suite_log_file" = true ]; then
+    extra_args+=(--no-suite-log-file)
+fi
 if [ -z "$VIRTUAL_ENV" ]; then
     if [ -d ".venv" ]; then
         source ".venv/bin/activate"
