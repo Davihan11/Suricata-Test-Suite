@@ -1,5 +1,6 @@
 """
 Author(s): Adam Kiripolský <adamkiripolsky.official@gmail.com>
+           Matyáš Sedmidubský <matyas.sedmidubsky@cesnet.cz>
 
 Copyright: (C) 2023 CESNET, z.s.p.o.
 """
@@ -75,7 +76,7 @@ class Suricata_manager:
         self.host_server = request.config.getoption("--remote-host")
         self.pcie_adress = interface
         self.capture_mode = capture_mode
-        self.user: str = request.config.getoption("--user")
+        self.user: str = os.environ["USER"]
 
         self.local_tmp_stats: str = suricata_tmp_stats_path
         self.asynch: bool = asynch
