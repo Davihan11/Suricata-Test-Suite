@@ -87,6 +87,14 @@ class BaseTrexClientManager:
                 # STL mode can only send one pcap at a time so it either
                 # needs to merge them together or replay them one by one
                 # currently it replays them one by one
+
+                # if STL mode gets used more in the future this should create a merged
+                # pcap that is at least a few seconds long, since we currently loop over
+                # the specified pcaps, which means that TRex can finish the PCAP in a
+                # few miliseconds and then wait for significantly longer until it receives
+                # a request to play another PCAP
+                # this would also allow for mixing the PCAPs together
+
                 self.stl_generator: TRexStateless = manager.request_stateless(request)
 
                 self.stl_generator.set_dst_mac(target_mac)
