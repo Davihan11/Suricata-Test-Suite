@@ -19,9 +19,11 @@ from lbr_trex_client.interactive.trex.stl.trex_stl_client import STLClient
 from lbr_trex_client.stf.trex_stf_lib.trex_client import CTRexClient
 from pytest import FixtureRequest
 
-# ASTFProfile needs to be imported exactly like this
-# otherwise it fails an isintance() check
+# these need to be imported exactly like this
+# otherwise they fail type introspection
 from trex.astf import trex_astf_profile
+from trex.common.trex_exceptions import TRexError
+
 from util.add_vlan import edit_vlan
 from util.config_builder import ConfigBuilder
 from util.suri_util import RunInfo
@@ -314,14 +316,20 @@ class BaseTrexClientManager:
                 pcap_index = 0
                 while elapsed < self.duration:
                     pcap = self.pcaps[pcap_index]
-                    client.push_remote(
-                        pcap_filename=str(self.get_remote_data_path(Path(pcap[0]))),
-                        ports=[0],
-                        ipg_usec=self.BASE_IPG_USEC / pcap[1],
-                        speedup=self.multiplier,
-                        count=1,
-                        duration=int(self.duration - elapsed),
-                    )
+                    try:
+                        client.push_remote(
+                            pcap_filename=str(self.get_remote_data_path(Path(pcap[0]))),
+                            ports=[0],
+                            ipg_usec=self.BASE_IPG_USEC / pcap[1],
+                            speedup=self.multiplier,
+                            count=1,
+                            duration=int(self.duration - elapsed),
+                        )
+                    except TRexError:
+                        # wait if port was not cleared yet
+                        sleep(0.05)
+                        elapsed = time() - start
+                        continue
                     elapsed = time() - start
                     pcap_index = (pcap_index + 1) % len(self.pcaps)
 
