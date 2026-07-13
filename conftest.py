@@ -49,7 +49,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--suricata-hugepages",
         type=str,
-        default="4G",
+        default="6G",
         action="store",
         help=("Specify amount of hugepages to be setup on remote machine. "),
     )
