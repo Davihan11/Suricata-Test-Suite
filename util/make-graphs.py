@@ -9,6 +9,7 @@ SPDX-License-Identifier: BSD-3-Clause
 
 import sys
 import json
+import logging
 import os
 import argparse
 import matplotlib.pyplot as plt
@@ -16,6 +17,8 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
+
+logger = logging.getLogger(__name__)
 
 Graph_function_params = Tuple[List[float], List[float], str]
 
@@ -51,15 +54,15 @@ def process_results_line(x_axis: List[float], y_axis: List[float], stats: dict):
     r_row: ResultsRow = parse_row(stats)
 
     x_axis.append(r_row.tx_bytes * 8 / (r_row.tx_time * 10**6))
-    print(x_axis)
+    logger.debug("X-axis: %s", x_axis)
 
-    print(f"Received packets total: {r_row.rx_packets}")
-    print(f"Transmitted packets total: {r_row.tx_packets}")
+    logger.info("Received packets total: %s", r_row.rx_packets)
+    logger.info("Transmitted packets total: %s", r_row.tx_packets)
 
     dropped_pkts: int = r_row.tx_packets - r_row.rx_packets
-    print(f"Dropped packets total: {dropped_pkts}")
+    logger.info("Dropped packets total: %s", dropped_pkts)
     y_axis.append(100 * dropped_pkts / r_row.tx_packets if r_row.tx_packets != 0 else 0)
-    print(y_axis)
+    logger.debug("Y-axis: %s", y_axis)
 
 
 def process_info_line(info: dict, file_names: List[str], first_in_json) -> str:
@@ -94,7 +97,7 @@ def make_graph(graph_lines: List[GraphLine], file_names: List[str]):
     x_label: str = "Transmit speed [Mbps]"
     y_label: str = "Dropped packets (%)"
 
-    print(graph_lines)
+    logger.debug("Graph lines: %s", graph_lines)
     plt.rcParams.update({"font.size": 7.5})
     for graph_line in graph_lines:
         plt.plot(
@@ -125,7 +128,7 @@ def main(*args):
             graph_title: str = ""
             parameters: dict = {}
             first_check = True
-            print(f"Input file: {arg}")
+            logger.info("Input file: %s", arg)
 
             for line in json_file:
                 agg_dict: dict = json.loads(line)
@@ -150,6 +153,7 @@ def main(*args):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
     if len(sys.argv) < 1:
         raise SyntaxError("Insufficient arguments.")
 
