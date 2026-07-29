@@ -33,6 +33,8 @@ usage(){
   echo "-pm   | --prefer-trex-mode [MODE] to suggest a mode for TRex. If unavailable tests use their defaults."
   echo "-fm   | --force-trex-mode [MODE] to force a TRex mode. If unavailable tests get skipped. Overrides -pm"
   echo "-sh   | --suricata-hugepages [SIZE] to specify how much RAM to allocate in hugepages. Default is 6G."
+  echo "-sl   | --suite-log-level [LEVEL] to set the logging level for the test suite: a name (DEBUG, INFO, PROGRESS, WARNING, ERROR, CRITICAL) or a number (e.g. 25). Default: INFO"
+  echo "-sf   | --suite-log-file to enable writing suite logs to results/artefacts/<run>/pytest.log"
   echo "-bs   | --binary-search <mm> <xm> <dr> <pr> to enable automatic throughput search"
   echo "-bsh  | --binary-search-help to show help for binary search mode"
   exit 0
@@ -74,6 +76,8 @@ while [ "$#" -gt 0 ]; do
     -p2 | --trex-server-port-2) trex_server_port_2=$2; shift 2 ;;
     -p | --pcie) pcies+=" "${2}; shift 2 ;;
     -ht | --heatup) heatup_duration=$2; shift 2 ;;
+    -sl | --suite-log-level) suite_log_level=$2; shift 2 ;;
+    -sf | --suite-log-file) suite_log_file=true; shift ;;
     -f | --filter) case $2 in rules) filter="rules and not norules";;
                         norules) filter="norules";;
                         *) filter="$2";;
@@ -197,6 +201,18 @@ if [ -z "$heatup_duration" ]; then
     fi
 fi
 
+if [ -z "$suite_log_level" ]; then
+    if [ ! -z "$LOGLEVEL" ]; then
+        suite_log_level="$LOGLEVEL"
+    else
+        suite_log_level="INFO"
+    fi
+fi
+
+if [ "$suite_log_file" != true ] && [ "$DEFAULT_SUITE_LOG_FILE" = true ]; then
+    suite_log_file=true
+fi
+
 if [ -z "$pcies" ]; then
     if [ ! -z "$DEFAULT_PCIES" ]; then
         pcies="$DEFAULT_PCIES"
@@ -221,6 +237,11 @@ if [ -z "$hugepages" ]; then
     fi
 fi
 
+extra_args+=("--suite-log-level=$suite_log_level")
+
+if [ "$suite_log_file" = true ]; then
+    extra_args+=(--suite-log-file)
+fi
 if [ -z "$VIRTUAL_ENV" ]; then
     if [ -d ".venv" ]; then
         source ".venv/bin/activate"
