@@ -77,13 +77,14 @@ def test_pcap_replay(
 
     # only STL is supported here; get_trex_mode validates --force/--prefer-trex-mode
     # and skips the test if an unsupported mode is forced
-    get_trex_mode(request, [TrexMode.STL])
+    trex_mode = get_trex_mode(request, [TrexMode.STL])
     trex_client = AdHocStlProfile(
         [(get_path_to_pcap, 1)],
         trex_manager,
         request,
         get_target_mac,
         get_target_vlan,
+        mode=trex_mode,
     )
 
     test_variant_name = f"{suri_conf.test_name}_{rules_config['name']}"
