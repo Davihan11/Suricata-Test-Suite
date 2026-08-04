@@ -42,6 +42,7 @@ from util.trex_util import (
     PcapList,
     TrexMode,
     get_trex_mac,
+    merge_pcaps,
     mkdir_remote,
     send_to_remote,
 )
@@ -96,6 +97,15 @@ class BaseTrexClientManager:
         # safely read it before set_props()
         self.multiplier: float | None = None
 
+        # warn once (per profile) if --trex-exact-count is set for a non-STL mode,
+        # instead of repeating the warning on every run()/multiplier iteration
+        if request.config.getoption("--trex-exact-count") and mode is not TrexMode.STL:
+            logger.warning(
+                "--trex-exact-count is only supported in STL mode (current mode: %s). "
+                "Ignoring it and using the regular duration-based replay.",
+                mode.name,
+            )
+
         if len(self.pcaps) < 1:
             raise ValueError("self.pcaps must contain at least one pcap")
 
@@ -141,7 +151,14 @@ class BaseTrexClientManager:
                     pcap_path = self.PCAP_PATH_PREFIX / pcap[0]
                     if target_vlan != 0:
                         pcap_path = Path(edit_vlan(str(pcap_path), target_vlan))
-                        self.pcaps[i] = (pcap_path.name, pcap[1])
+                        # store the path relative to PCAP_PATH_PREFIX (not just the
+                        # basename) so subdirectory pcaps (e.g. web_50_sites/*.pcap)
+                        # keep their subdir; otherwise merge_pcaps()/run() would look
+                        # for the VLAN-tagged pcap in the wrong (top-level) location
+                        self.pcaps[i] = (
+                            pcap_path.relative_to(self.PCAP_PATH_PREFIX),
+                            pcap[1],
+                        )
                     pcap_remote_path = self.get_remote_data_path(pcap_path)
                     send_to_remote(pcap_path, trex_hostname, pcap_remote_path)
 
@@ -400,12 +417,6 @@ class BaseTrexClientManager:
             )
 
         exact_count = self.request.config.getoption("--trex-exact-count")
-        if exact_count and self.mode is not TrexMode.STL:
-            logger.warning(
-                "--trex-exact-count is only supported in STL mode (current mode: %s). "
-                "Ignoring it and using the regular duration-based replay.",
-                self.mode.name,
-            )
 
         match self.mode:
             case TrexMode.STL:
@@ -423,17 +434,25 @@ class BaseTrexClientManager:
                     multiplier = self.multiplier if self.multiplier is not None else 1.0
                     pps = base_pps * multiplier
 
-                    streams = []
-                    for i, pcap in enumerate(self.pcaps):
-                        pcap_path = str(self.PCAP_PATH_PREFIX / pcap[0])
-                        stream = STLStream(
-                            name=f"S{i}",
-                            packet=STLPktBuilder(pkt=pcap_path),
-                            mode=STLTXSingleBurst(pps=pps, total_pkts=total_pkts),
+                    # multi-pcap profiles are merged into a single pcap in __init__,
+                    # so there is exactly one stream here. Guard against future code
+                    # paths that could reach run() with multiple pcaps, where each
+                    # stream would send `total_pkts` and the total would silently
+                    # become N * total_pkts. Use an explicit check (not assert) so
+                    # the guard survives python -O.
+                    if len(self.pcaps) != 1:
+                        raise ValueError(
+                            "exact-count mode requires a single (merged) pcap; "
+                            f"got {len(self.pcaps)}"
                         )
-                        streams.append(stream)
+                    pcap_path = str(self.PCAP_PATH_PREFIX / self.pcaps[0][0])
+                    stream = STLStream(
+                        name="S0",
+                        packet=STLPktBuilder(pkt=pcap_path),
+                        mode=STLTXSingleBurst(pps=pps, total_pkts=total_pkts),
+                    )
 
-                    client.add_streams(streams, ports=[0])
+                    client.add_streams([stream], ports=[0])
                     # STLTXSingleBurst sends exactly `total_pkts` packets and stops
                     # on its own, so the duration is irrelevant. Use -1 (unlimited)
                     # so the burst is never truncated at low multipliers.
@@ -569,3 +588,24 @@ class BaseTrexClientManager:
 
             case TrexMode.STF:
                 return self.stf_generator.get_result_obj().get_latest_dump()
+
+
+class BaseAdHocTrex(BaseTrexClientManager, pcaps=[]):
+    """
+    Base class for ad-hoc TRex profiles that take their pcaps at runtime
+    (rather than at class definition time).
+
+    All ad-hoc profiles share the same `__init__` so they behave consistently.
+    """
+
+    def __init__(
+        self,
+        pcaps: PcapList,
+        manager: TRexManager,
+        request: FixtureRequest,
+        target_mac: str,
+        target_vlan: int = 0,
+        mode: TrexMode = TrexMode.STL,
+    ):
+        self.profile_pcaps = pcaps
+        super().__init__(manager, request, target_mac, target_vlan, mode=mode)

@@ -200,7 +200,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--trex-pps",
         type=float,
-        default=200000,
+        default=200_000,
         action="store",
         help=(
             "Packets per second for the STL exact-count mode "
@@ -210,7 +210,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--trex-total-packets",
         type=int,
-        default=10000000,
+        default=10_000_000,
         action="store",
         help=(
             "Total number of packets to send for the STL exact-count mode "
