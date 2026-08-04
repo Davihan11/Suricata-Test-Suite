@@ -21,6 +21,7 @@ from util.suri_util import TestInfo, get_drop_rate
 from assets.trex.traffic_profiles.http_https_smb_trex_profile.profile import (
     HttpHttpsSmbProfile,
 )
+from assets.trex.traffic_profiles.ad_hoc_exact_stl_profile import AdHocExactStlProfile
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
 from util.trex_util import TrexMode, get_trex_mode
 from util.multiplier_iterator import multiplier_iterator_create
@@ -77,10 +78,21 @@ def test_http_https_smb(
         utilized_programs_info=utilized_programs_info,
     )
 
-    trex_mode = get_trex_mode(request, [TrexMode.ASTF, TrexMode.STF])
-    trex_client = HttpHttpsSmbProfile(
-        trex_manager, request, get_target_mac, get_target_vlan, mode=trex_mode
+    trex_mode = get_trex_mode(
+        request, [TrexMode.ASTF, TrexMode.STF, TrexMode.STL_EXACT]
     )
+    if trex_mode == TrexMode.STL_EXACT:
+        trex_client = AdHocExactStlProfile(
+            HttpHttpsSmbProfile.profile_pcaps,
+            trex_manager,
+            request,
+            get_target_mac,
+            get_target_vlan,
+        )
+    else:
+        trex_client = HttpHttpsSmbProfile(
+            trex_manager, request, get_target_mac, get_target_vlan, mode=trex_mode
+        )
 
     test_variant_name = f"{suri_conf.test_name}_{rules_config['name']}"
     trex_multipliers: List[float] = get_trex_multi(

@@ -16,6 +16,7 @@ import logging
 from typing import List
 from lbr_testsuite import trex
 from assets.trex.traffic_profiles.web_50_sites_trex_profile import Web50SitesProfile
+from assets.trex.traffic_profiles.ad_hoc_exact_stl_profile import AdHocExactStlProfile
 from util.suricata_manager import Suricata_manager
 from util.suri_util import TestInfo, get_drop_rate
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
@@ -74,10 +75,19 @@ def test_web_50_sites(
         utilized_programs_info=utilized_programs_info,
     )
 
-    trex_mode = get_trex_mode(request, [TrexMode.STF])
-    trex_client = Web50SitesProfile(
-        trex_manager, request, get_target_mac, get_target_vlan, mode=trex_mode
-    )
+    trex_mode = get_trex_mode(request, [TrexMode.STF, TrexMode.STL_EXACT])
+    if trex_mode == TrexMode.STL_EXACT:
+        trex_client = AdHocExactStlProfile(
+            Web50SitesProfile.profile_pcaps,
+            trex_manager,
+            request,
+            get_target_mac,
+            get_target_vlan,
+        )
+    else:
+        trex_client = Web50SitesProfile(
+            trex_manager, request, get_target_mac, get_target_vlan, mode=trex_mode
+        )
 
     test_variant_name = f"{suri_conf.test_name}_{rules_config['name']}"
     trex_multipliers: List[float] = get_trex_multi(

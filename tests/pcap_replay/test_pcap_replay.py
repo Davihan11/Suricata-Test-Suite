@@ -18,7 +18,9 @@ from lbr_testsuite import trex
 from util.suricata_manager import Suricata_manager
 from util.suri_util import TestInfo, get_drop_rate
 from assets.trex.traffic_profiles.ad_hoc_stl_trex_profile import AdHocStlProfile
+from assets.trex.traffic_profiles.ad_hoc_exact_stl_profile import AdHocExactStlProfile
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
+from util.trex_util import TrexMode, get_trex_mode
 from util.multiplier_iterator import multiplier_iterator_create
 from util.test_runner import TrexTestRun
 
@@ -74,9 +76,23 @@ def test_pcap_replay(
         utilized_programs_info=utilized_programs_info,
     )
 
-    trex_client = AdHocStlProfile(
-        [(get_path_to_pcap, 1)], trex_manager, request, get_target_mac, get_target_vlan
-    )
+    trex_mode = get_trex_mode(request, [TrexMode.STL, TrexMode.STL_EXACT])
+    if trex_mode == TrexMode.STL_EXACT:
+        trex_client = AdHocExactStlProfile(
+            [(get_path_to_pcap, 1)],
+            trex_manager,
+            request,
+            get_target_mac,
+            get_target_vlan,
+        )
+    else:
+        trex_client = AdHocStlProfile(
+            [(get_path_to_pcap, 1)],
+            trex_manager,
+            request,
+            get_target_mac,
+            get_target_vlan,
+        )
 
     test_variant_name = f"{suri_conf.test_name}_{rules_config['name']}"
     trex_multipliers: List[float] = get_trex_multi(
