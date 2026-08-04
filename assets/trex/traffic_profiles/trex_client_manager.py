@@ -1,5 +1,6 @@
 """
 Author(s):  Matyáš Sedmidubský <matyas.sedmidubsky@cesnet.cz>
+            Dávid Hanko <david.hanko@cesnet.cz>
 
 Copyright: (C) 2026 CESNET, z.s.p.o.
 SPDX-License-Identifier: BSD-3-Clause
@@ -44,6 +45,56 @@ from util.trex_util import (
 logger = logging.getLogger(__name__)
 
 
+def merge_pcaps(pcap_paths: list[Path], weights: list[float], out_path: Path) -> Path:
+    """
+    Merges several pcaps into one by interleaving their packets
+    proportionally to `weights` (weighted round-robin).
+
+    Returns `out_path` with the merged pcap written.
+    """
+    from scapy.all import rdpcap, wrpcap
+
+    if len(pcap_paths) != len(weights):
+        raise ValueError("pcap_paths and weights must have the same length")
+
+    streams = [rdpcap(str(p)) for p in pcap_paths]
+    total_w = sum(weights)
+    if total_w <= 0:
+        raise ValueError("sum of weights must be positive")
+
+    # weighted round-robin: each source emits packets per round proportional to
+    # its share of the total weight, scaled so the smallest positive quota emits 1
+    total_pkts = sum(len(s) for s in streams)
+    quotas = [w / total_w for w in weights]
+    min_q = min(q for q in quotas if q > 0)
+    # zero-weight sources emit nothing; others emit at least 1 packet per round
+    per_round = [0 if q <= 0 else max(1, round(q / min_q)) for q in quotas]
+
+    merged = []
+    indices = [0] * len(streams)
+    remaining = total_pkts
+    while remaining > 0:
+        for si, stream in enumerate(streams):
+            for _ in range(per_round[si]):
+                if indices[si] < len(stream):
+                    merged.append(stream[indices[si]])
+                    indices[si] += 1
+                    remaining -= 1
+                    if remaining <= 0:
+                        break
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    wrpcap(str(out_path), merged)
+    logger.info(
+        "Merged %d pcaps into %s (%d packets, weights=%s)",
+        len(pcap_paths),
+        out_path.name,
+        len(merged),
+        weights,
+    )
+    return out_path
+
+
 class BaseTrexClientManager:
     """
     Base class for creating TRex profiles.
@@ -85,6 +136,9 @@ class BaseTrexClientManager:
         self.pcaps = copy.deepcopy(self.profile_pcaps)
         self.mode = mode
         self.vlan_id = target_vlan
+        # set by set_props() before run(); initialized here so subclasses can
+        # safely read it (e.g. AdHocExactStlProfile.run()) before set_props()
+        self.multiplier: float | None = None
 
         if len(self.pcaps) < 1:
             raise ValueError("self.pcaps must contain at least one pcap")
@@ -102,7 +156,7 @@ class BaseTrexClientManager:
         trex_pcie = trex_host[1]
 
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 # STL mode can only send one pcap at a time so it either
                 # needs to merge them together or replay them one by one
                 # currently it replays them one by one
@@ -134,6 +188,26 @@ class BaseTrexClientManager:
                         self.pcaps[i] = (pcap_path.name, pcap[1])
                     pcap_remote_path = self.get_remote_data_path(pcap_path)
                     send_to_remote(pcap_path, trex_hostname, pcap_remote_path)
+
+                # mix packets from all pcaps into one merged pcap instead of
+                # replaying them one after another; the merged pcap is then
+                # replayed in a loop by `run()`
+                if len(self.pcaps) > 1:
+                    local_paths = [self.PCAP_PATH_PREFIX / p[0] for p in self.pcaps]
+                    weights = [float(p[1]) for p in self.pcaps]
+                    # write the merged pcap into PCAP_PATH_PREFIX so that both
+                    # `run()` (push_remote) and AdHocExactStlProfile.run()
+                    # (STLPktBuilder) can resolve it via PCAP_PATH_PREFIX / name
+                    merged_path = merge_pcaps(
+                        local_paths,
+                        weights,
+                        self.PCAP_PATH_PREFIX / "stl_merged.pcap",
+                    )
+                    merged_remote = self.get_remote_data_path(merged_path)
+                    send_to_remote(merged_path, trex_hostname, merged_remote)
+                    # merged pcap's effective divisor = sum of divisors, since
+                    # packets from all sources are interleaved at combined rate
+                    self.pcaps = [(merged_path.name, sum(weights))]
 
             case TrexMode.ASTF:
                 self.client: TRexAdvancedStateful = manager.request_stateful(
@@ -328,7 +402,7 @@ class BaseTrexClientManager:
         # pcaps are sent to the server in `__init__`
 
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 self.stl_generator.reset()
 
             case TrexMode.ASTF:
@@ -370,7 +444,7 @@ class BaseTrexClientManager:
             )
 
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 client: STLClient = self.stl_generator.get_handler()
 
                 # the pcaps can end early, so we loop through them
@@ -423,7 +497,7 @@ class BaseTrexClientManager:
 
     def wait_on_traffic(self) -> None:
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 self.stl_generator.wait_on_traffic()
 
             case TrexMode.ASTF:
@@ -442,7 +516,7 @@ class BaseTrexClientManager:
     def stop(self) -> None:
         logger.info("Stopping TRex traffic: mode=%s", self.mode.name)
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 self.stl_generator.stop()
 
             case TrexMode.ASTF:
@@ -458,7 +532,7 @@ class BaseTrexClientManager:
         """
         logger.debug("Updating run info from TRex stats")
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 run_info.trex_server_stats = self.get_stats()
                 run_info.trex_client_stats = None
 
@@ -490,7 +564,7 @@ class BaseTrexClientManager:
         assert role in ("server", "client")
 
         match self.mode:
-            case TrexMode.STL:
+            case TrexMode.STL | TrexMode.STL_EXACT:
                 return self.stl_generator.get_stats()
 
             case TrexMode.ASTF:
