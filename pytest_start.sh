@@ -32,6 +32,9 @@ usage(){
   echo "-pc   | --pcap [PATH] to specify the pcap file to send to Suricata. Also sets --defined-tests to *only* pcap_replay"
   echo "-pm   | --prefer-trex-mode [MODE] to suggest a mode for TRex. If unavailable tests use their defaults."
   echo "-fm   | --force-trex-mode [MODE] to force a TRex mode. If unavailable tests get skipped. Overrides -pm"
+  echo "-ec   | --trex-exact-count to send an exact number of packets in STL mode (STLTXSingleBurst)"
+  echo "-pps  | --trex-pps [PPS] to set packets per second for the STL exact-count mode. Default: 200000"
+  echo "-tp   | --trex-total-packets [COUNT] to set total packets to send for the STL exact-count mode. Default: 10000000"
   echo "-sh   | --suricata-hugepages [SIZE] to specify how much RAM to allocate in hugepages. Default is 6G."
   echo "-sl   | --suite-log-level [LEVEL] to set the logging level for the test suite: a name (DEBUG, INFO, PROGRESS, WARNING, ERROR, CRITICAL) or a number (e.g. 25). Default: INFO"
   echo "-sf   | --suite-log-file to enable writing suite logs to results/artefacts/<run>/pytest.log"
@@ -85,6 +88,9 @@ while [ "$#" -gt 0 ]; do
 	-pc | --pcap) pcap_replay="$2"; shift 2 ;;
     -pm | --prefer-trex-mode) trex_mode_flags+="--prefer-trex-mode $2 "; shift 2 ;;
     -fm | --force-trex-mode) trex_mode_flags+="--force-trex-mode $2 "; shift 2 ;;
+    -ec | --trex-exact-count) trex_exact_count=true; shift ;;
+    -pps | --trex-pps) trex_pps="$2"; shift 2 ;;
+    -tp | --trex-total-packets) trex_total_packets="$2"; shift 2 ;;
     -sh | --suricata-hugepages) hugepages="$2"; shift 2 ;;
     -h | --help) usage ;;
     -bsh | --binary-search-help) binary_search_usage ;;
@@ -288,6 +294,9 @@ do
     --remote-host="$suricata_server" --param-file="param.py" \
     --trex-force-use \
     $trex_mode_flags \
+    ${trex_exact_count:+--trex-exact-count} \
+    --trex-pps="${trex_pps:-200000}" \
+    --trex-total-packets="${trex_total_packets:-10000000}" \
     --traffic-duration="$defined_time" \
     --heatup-duration="$heatup_duration" \
     -k "$filter" \
