@@ -227,7 +227,7 @@ def pytest_addoption(parser):
         help=(
             "Enable binary search mode for finding optimal Suricata speed. "
             "Accepts exactly 4 positional arguments: "
-            "<min_multiplier> <max_multiplier> <drop_rate%> <precision>. "
+            "<min_multiplier> <max_multiplier> <drop_rate%%> <precision>. "
             "Example: --binary-search 0.0 10.0 1.0 0.05"
         ),
     )
