@@ -187,6 +187,36 @@ def pytest_addoption(parser):
             "Run tests with the specified trex mode if available. If not, skip test."
         ),
     )
+    parser.addoption(
+        "--trex-exact-count",
+        action="store_true",
+        default=False,
+        help=(
+            "Send an exact number of packets in STL mode using STLTXSingleBurst. "
+            "The packet count and rate are controlled by --trex-total-packets and "
+            "--trex-pps. Ignored (with a warning) for non-STL modes."
+        ),
+    )
+    parser.addoption(
+        "--trex-pps",
+        type=float,
+        default=200000,
+        action="store",
+        help=(
+            "Packets per second for the STL exact-count mode "
+            "(STLTXSingleBurst pps). Default: 200000."
+        ),
+    )
+    parser.addoption(
+        "--trex-total-packets",
+        type=int,
+        default=10000000,
+        action="store",
+        help=(
+            "Total number of packets to send for the STL exact-count mode "
+            "(STLTXSingleBurst total_pkts). Default: 10000000."
+        ),
+    )
 
     parser.addoption(
         "--binary-search",
