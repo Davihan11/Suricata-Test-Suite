@@ -11,3 +11,5 @@ results
 
 # all pcaps with the format <name>.vlan___.pcap == pcaps with modified vlans
 assets/trex/traffic_profiles/**/*.vlan???.pcap
+# all pcaps with the format <name>.stl_merged.pcap == pcaps merged from multiple streams
+assets/trex/traffic_profiles/pcaps/*stl_merged.pcap
