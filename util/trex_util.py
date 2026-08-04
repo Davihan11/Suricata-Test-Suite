@@ -1,5 +1,6 @@
 """
 Author(s):  Matyáš Sedmidubský <matyas.sedmidubsky@cesnet.cz>
+            Dávid Hanko <david.hanko@cesnet.cz>
 
 Copyright: (C) 2026 CESNET, z.s.p.o.
 SPDX-License-Identifier: BSD-3-Clause
@@ -22,6 +23,7 @@ class TrexMode(Enum):
     STL = 0
     ASTF = 1
     STF = 2
+    STL_EXACT = 3
 
 
 PcapList = Sequence[Tuple[str, int | float]]
@@ -82,6 +84,8 @@ def str_to_trex_mode(mode: str) -> TrexMode | None:
             return TrexMode.STF
         case "stl":
             return TrexMode.STL
+        case "stl.exact":
+            return TrexMode.STL_EXACT
         case _:
             return None
 
