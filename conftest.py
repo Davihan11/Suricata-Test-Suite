@@ -170,7 +170,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--prefer-trex-mode",
         type=str,
-        choices=["astf", "stf", "stl"],
+        choices=["astf", "stf", "stl", "stl.exact"],
         default=None,
         action="store",
         help=(
@@ -180,11 +180,31 @@ def pytest_addoption(parser):
     parser.addoption(
         "--force-trex-mode",
         type=str,
-        choices=["astf", "stf", "stl"],
+        choices=["astf", "stf", "stl", "stl.exact"],
         default=None,
         action="store",
         help=(
             "Run tests with the specified trex mode if available. If not, skip test."
+        ),
+    )
+    parser.addoption(
+        "--trex-pps",
+        type=float,
+        default=200000,
+        action="store",
+        help=(
+            "Packets per second for the stl.exact TRex mode "
+            "(STLTXSingleBurst pps). Default: 200000."
+        ),
+    )
+    parser.addoption(
+        "--trex-total-packets",
+        type=int,
+        default=10000000,
+        action="store",
+        help=(
+            "Total number of packets to send for the stl.exact TRex mode "
+            "(STLTXSingleBurst total_pkts). Default: 10000000."
         ),
     )
 
