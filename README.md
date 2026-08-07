@@ -151,6 +151,11 @@ DEFAULT_HUGEPAGES="6G"
 LOGLEVEL="INFO"
 ```
 
+**Note on hugepages:** `DEFAULT_HUGEPAGES` (or `--suricata-hugepages` when running pytest directly)
+is the amount of RAM requested for hugepages on the Suricata server. If the machine already has
+less hugepage memory mounted than requested, it is re-allocated up to the requested amount.
+Note that this only ever increases the allocation — it never shrinks it back down.
+
 Note that an empty string ("") in `-d` (or `DEFAULT_TESTS`) is a valid value for running all tests
 and that setting `DEFAULT_TESTS` will prevent you from doing so.
 

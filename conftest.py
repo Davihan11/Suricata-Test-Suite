@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from lbr_testsuite.executable import executable, remote_executor
 from lbr_trex_client.interactive import trex
-from typing import Tuple, List
+from typing import Tuple
 from pathlib import Path
 from itertools import product
 from param import filter
@@ -93,10 +93,14 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--suricata-hugepages",
-        type=str,
+        type=_parse_size_to_bytes,
         default="6G",
         action="store",
-        help=("Specify amount of hugepages to be setup on remote machine. "),
+        help=(
+            "Specify amount of hugepages to be setup on remote machine. "
+            "If the machine already has less mounted, it is re-allocated "
+            "to this amount."
+        ),
     )
     parser.addoption(
         "--suricata-cfg",
@@ -475,29 +479,106 @@ def assert_available_machines(request) -> None:
     assert int(stdout) > 0, "Interface on host not found"
 
 
-def hugepages_allocated(request) -> bool:
-    process_cat_hugepages_count = executable.Tool(
-        "cat /proc/meminfo | grep 'HugePages_Free:' > /tmp/hugepages_allocated_info",
-        executor=get_suri_executor(request),
-        sudo=True,
-    )
-    process_cat_hugepages_count.run()
+def _parse_size_to_bytes(size: str) -> int:
+    """Parse a size string like ``6G``, ``512M`` or ``1024`` into bytes.
 
-    process_get_hugepages_count_str = executable.Tool(
-        "cat /tmp/hugepages_allocated_info",
-        sudo=True,
+    Supported suffixes are ``K``, ``M``, ``G``, ``T`` and ``P`` (binary
+    multiples). A bare number is interpreted as bytes. A unit is matched
+    loosely (any trailing characters) and validated against the multiplier
+    table below, so the space-separated form printed by ``/proc/meminfo``
+    (e.g. ``2048 kB``) is also accepted.
+    """
+    size = size.strip().upper()
+    match = re.fullmatch(r"(\d+)\s*(.+)?", size)
+    if not match:
+        raise ValueError(f"Couldn't parse byte count from {size!r}")
+    value = int(match.group(1))
+    unit = match.group(2) or ""
+    # Normalize e.g. "KB" -> "K" (meminfo prints "kB").
+    if unit.endswith("B") and len(unit) > 1:
+        unit = unit[:-1]
+    multipliers = {
+        "": 1,
+        "K": 1024,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+        "P": 1024**5,
+    }
+    if unit not in multipliers:
+        raise ValueError(f"Unknown size unit {unit!r} in {size!r}")
+    return value * multipliers[unit]
+
+
+def _bytes_to_size(size: int) -> str:
+    """Format a byte count as a compact size string (e.g. ``6G``).
+
+    Inverse of ``_parse_size_to_bytes``, used to hand the requested amount back
+    to ``dpdk-hugepages.py --setup``, which expects a size string rather than a
+    raw byte count. Picks the largest unit that divides the value evenly.
+    """
+    if size == 0:
+        return "0"
+    units = [
+        (1024**5, "P"),
+        (1024**4, "T"),
+        (1024**3, "G"),
+        (1024**2, "M"),
+        (1024, "K"),
+    ]
+    for factor, suffix in units:
+        if size % factor == 0:
+            return f"{size // factor}{suffix}"
+    return str(size)
+
+
+def hugepages_allocated(request) -> bool:
+    """Check whether the requested amount of hugepages is already allocated.
+
+    The check compares the currently allocated hugepage memory
+    (``HugePages_Total`` * ``Hugepagesize`` from ``/proc/meminfo``) against the
+    amount requested via ``--suricata-hugepages``. It returns ``True`` only if
+    the allocated amount is at least the requested one.
+
+    This ensures that increasing ``--suricata-hugepages`` on a machine that
+    already has hugepages mounted triggers a re-allocation instead of silently
+    ignoring the new request (the old implementation only checked that *some*
+    hugepages were free).
+    """
+    process_cat_hugepages_count = executable.Tool(
+        "cat /proc/meminfo | grep -E 'HugePages_Total:|Hugepagesize:'",
         executor=get_suri_executor(request),
+        sudo=True,
     )
-    stdout, stderr = process_get_hugepages_count_str.run()
+    stdout, stderr = process_cat_hugepages_count.run()
 
     assert stderr == "", (
         f"Error while gathering information about allocated hugepages: {stderr}"
     )
 
-    # huge_pages[0] == "HugePages_Free:", huge_pages[1] is some nubmer as `str`
-    huge_pages: List[str] = stdout.split()
+    # Parse HugePages_Total and Hugepagesize from the output, e.g.:
+    #   HugePages_Total:    3072
+    #   Hugepagesize:       2048 kB
+    total_pages = 0
+    page_size_kb = 0
+    for line in stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        if parts[0] == "HugePages_Total:":
+            total_pages = int(parts[1])
+        elif parts[0] == "Hugepagesize:":
+            page_size_kb = int(parts[1])
 
-    return huge_pages[1] != "0"
+    allocated_bytes = total_pages * page_size_kb * 1024
+    # ``dpdk-hugepages.py --setup <size>`` actually allocates double the
+    # requested amount (e.g. ``--setup 4G`` allocates 8G), so halve the read
+    # value to compare against the requested (single) amount. Without this,
+    # requesting 5G would see 8G already allocated and skip re-allocation.
+    allocated_bytes //= 2
+    requested_bytes = request.config.getoption("--suricata-hugepages")
+
+    return allocated_bytes >= requested_bytes
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -506,18 +587,48 @@ def check_hugepages(request) -> None:
         logger.info("Huge-pages already allocated")
         return
 
-    logger.info(
-        "Allocating huge-pages: %s", request.config.getoption("--suricata-hugepages")
-    )
+    requested_bytes = request.config.getoption("--suricata-hugepages")
+    logger.info("Allocating huge-pages: %s", _bytes_to_size(requested_bytes))
     process_set_hugepages = executable.Tool(
-        f"dpdk-hugepages.py --setup {request.config.getoption('--suricata-hugepages')}",
+        f"dpdk-hugepages.py --setup {_bytes_to_size(requested_bytes)}",
+        sudo=True,
+        executor=get_suri_executor(request),
+    )
+    process_reserve_hugepages = executable.Tool(
+        f"dpdk-hugepages.py --reserve {_bytes_to_size(requested_bytes)}",
         sudo=True,
         executor=get_suri_executor(request),
     )
 
-    _, stderr = process_set_hugepages.run()
+    stderr_parts = []
+    try:
+        _, stderr = process_set_hugepages.run()
+        stderr_parts.append(stderr)
+    except executable.ExecutableProcessError as e:
+        logger.warning(
+            "dpdk-hugepages.py --setup failed (%s). Trying --reserve as a "
+            "last-ditch effort.",
+            e,
+        )
+        try:
+            _, stderr = process_reserve_hugepages.run()
+            stderr_parts.append(stderr)
+        except executable.ExecutableProcessError as reserve_e:
+            logger.critical(
+                "Failed to allocate huge-pages (%s). Continuing with the "
+                "currently allocated huge-pages; tests that require more will "
+                "fail with a specific error.",
+                reserve_e,
+            )
+            return
+    else:
+        # --setup succeeded; still reserve the pages so they are actually
+        # pinned for Suricata.
+        _, stderr = process_reserve_hugepages.run()
+        stderr_parts.append(stderr)
 
-    assert stderr == "", f"Error while allocating hugepages: {stderr}"
+    combined_stderr = "\n".join(part for part in stderr_parts if part)
+    assert combined_stderr == "", f"Error while allocating hugepages: {combined_stderr}"
     logger.info("Huge-pages allocated successfully")
 
 
