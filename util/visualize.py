@@ -15,8 +15,8 @@ Example:
     python3 util/visualize.py -i stats.json -p flow.memuse -p stream.memuse \\
         -f 'uptime > 30'
 
-Multiple input files can be given (each ``-i`` adds another file); records from
-all of them are merged and plotted together.
+Multiple input files can be given (each ``-i`` adds another file); each input
+is plotted as its own labelled series on the same plot.
 """
 
 import argparse
@@ -30,9 +30,6 @@ import jq
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
-
-# jq filter that selects only the "stats" event records from a JSON-lines file.
-_STATS_SELECTOR = "select(.event_type == \"stats\")"
 
 
 def _parse_args(argv: List[str]) -> argparse.Namespace:
@@ -51,7 +48,7 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
         metavar="FILE",
         help=(
             "Input stats/eve.json file (JSON-lines). May be given multiple "
-            "times to merge several files into one plot."
+            "times; each input is plotted as its own labelled series."
         ),
     )
     parser.add_argument(
@@ -179,15 +176,31 @@ def _normalize_filter(filter_expr: str) -> str:
 
     ``uptime > 30`` becomes ``.uptime > 30`` so field access works without the
     user having to type the leading dot. Filters that already start with a
-    jq construct (``.``, ``[``, ``(``, ``{``, ``select``, etc.) are left as-is.
+    jq construct (``.``, ``[``, ``(``, ``{``, ``select``, etc.) or with a
+    function call (e.g. ``has("foo")``) are left as-is.
     """
     stripped = filter_expr.lstrip()
     if not stripped:
         return filter_expr
-    first = stripped[0]
-    if first.isalpha() and not stripped.startswith(("select", "if", "reduce")):
-        return "." + filter_expr
-    return filter_expr
+
+    # Consume the leading identifier token (letters, digits, underscores).
+    i = 0
+    while i < len(stripped) and (stripped[i].isalnum() or stripped[i] == "_"):
+        i += 1
+    if i == 0:
+        return filter_expr
+
+    ident = stripped[:i]
+    if not (ident[0].isalpha() or ident[0] == "_"):
+        return filter_expr
+
+    rest = stripped[i:].lstrip()
+    # Leave jq keywords and function calls (identifier followed by '(') alone;
+    # only bare field identifiers get a leading '.' prepended.
+    if ident in {"select", "if", "reduce"} or rest.startswith("("):
+        return filter_expr
+
+    return "." + filter_expr
 
 
 def _extract_series(records: List[dict], path: str) -> List[Tuple[float, float]]:
@@ -319,12 +332,18 @@ def _main_by_multiplier(args: argparse.Namespace) -> int:
                 records = _read_stats_records(stats_path)
                 if args.filter:
                     records = _apply_filter(records, args.filter)
-                points = list(
-                    zip(
-                        _extract_series(records, args.x_axis),
-                        _extract_series(records, counter_path),
+                x_points = _extract_series(records, args.x_axis)
+                y_points = _extract_series(records, counter_path)
+                if len(y_points) != len(x_points):
+                    logger.warning(
+                        "Path %r produced %d points but x-axis has %d in %s; "
+                        "pairing by index may be misaligned.",
+                        counter_path,
+                        len(y_points),
+                        len(x_points),
+                        stats_path,
                     )
-                )
+                points = list(zip(x_points, y_points))
                 summary = _summarize_series(points, args.delta)
                 xs.append(multiplier)
                 ys.append(summary)
