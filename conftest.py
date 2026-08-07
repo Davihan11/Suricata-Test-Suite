@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from lbr_testsuite.executable import executable, remote_executor
 from lbr_trex_client.interactive import trex
-from typing import Tuple, List
+from typing import Tuple
 from pathlib import Path
 from itertools import product
 from param import filter
@@ -96,7 +96,11 @@ def pytest_addoption(parser):
         type=str,
         default="6G",
         action="store",
-        help=("Specify amount of hugepages to be setup on remote machine. "),
+        help=(
+            "Specify amount of hugepages to be setup on remote machine. "
+            "If the machine already has less mounted, it is re-allocated "
+            "to this amount."
+        ),
     )
     parser.addoption(
         "--suricata-cfg",
@@ -475,9 +479,45 @@ def assert_available_machines(request) -> None:
     assert int(stdout) > 0, "Interface on host not found"
 
 
+def _parse_size_to_bytes(size: str) -> int:
+    """Parse a size string like ``6G``, ``512M`` or ``1024`` into bytes.
+
+    Supported suffixes are ``K``, ``M``, ``G``, ``T`` and ``P`` (binary
+    multiples). A bare number is interpreted as bytes.
+    """
+    size = size.strip().upper()
+    match = re.fullmatch(r"(\d+)([KMGTP]?)", size)
+    if not match:
+        raise ValueError(f"Invalid size format for hugepages: {size!r}")
+    value = int(match.group(1))
+    unit = match.group(2)
+    multipliers = {
+        "": 1,
+        "K": 1024,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+        "P": 1024**5,
+    }
+    return value * multipliers[unit]
+
+
 def hugepages_allocated(request) -> bool:
+    """Check whether the requested amount of hugepages is already allocated.
+
+    The check compares the currently allocated hugepage memory
+    (``HugePages_Total`` * ``Hugepagesize`` from ``/proc/meminfo``) against the
+    amount requested via ``--suricata-hugepages``. It returns ``True`` only if
+    the allocated amount is at least the requested one.
+
+    This ensures that increasing ``--suricata-hugepages`` on a machine that
+    already has hugepages mounted triggers a re-allocation instead of silently
+    ignoring the new request (the old implementation only checked that *some*
+    hugepages were free).
+    """
     process_cat_hugepages_count = executable.Tool(
-        "cat /proc/meminfo | grep 'HugePages_Free:' > /tmp/hugepages_allocated_info",
+        "cat /proc/meminfo | grep -E 'HugePages_Total:|Hugepagesize:' "
+        "> /tmp/hugepages_allocated_info",
         executor=get_suri_executor(request),
         sudo=True,
     )
@@ -494,10 +534,26 @@ def hugepages_allocated(request) -> bool:
         f"Error while gathering information about allocated hugepages: {stderr}"
     )
 
-    # huge_pages[0] == "HugePages_Free:", huge_pages[1] is some nubmer as `str`
-    huge_pages: List[str] = stdout.split()
+    # Parse HugePages_Total and Hugepagesize from the output, e.g.:
+    #   HugePages_Total:    3072
+    #   Hugepagesize:       2048 kB
+    total_pages = 0
+    page_size_kb = 0
+    for line in stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        if parts[0] == "HugePages_Total:":
+            total_pages = int(parts[1])
+        elif parts[0] == "Hugepagesize:":
+            page_size_kb = int(parts[1])
 
-    return huge_pages[1] != "0"
+    allocated_bytes = total_pages * page_size_kb * 1024
+    requested_bytes = _parse_size_to_bytes(
+        request.config.getoption("--suricata-hugepages")
+    )
+
+    return allocated_bytes >= requested_bytes
 
 
 @pytest.fixture(scope="session", autouse=True)
