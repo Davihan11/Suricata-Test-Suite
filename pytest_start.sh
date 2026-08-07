@@ -32,7 +32,7 @@ usage(){
   echo "-pc   | --pcap [PATH] to specify the pcap file to send to Suricata. Also sets --defined-tests to *only* pcap_replay"
   echo "-pm   | --prefer-trex-mode [MODE] to suggest a mode for TRex. If unavailable tests use their defaults."
   echo "-fm   | --force-trex-mode [MODE] to force a TRex mode. If unavailable tests get skipped. Overrides -pm"
-  echo "-sh   | --suricata-hugepages [SIZE] to specify how much RAM to allocate in hugepages. Default is 6G."
+  echo "-sh   | --suricata-hugepages [SIZE] to specify how much RAM to allocate in hugepages. Default is 6G. If the machine already has less mounted, it is re-allocated to this amount."
   echo "-sl   | --suite-log-level [LEVEL] to set the logging level for the test suite: a name (DEBUG, INFO, PROGRESS, WARNING, ERROR, CRITICAL) or a number (e.g. 25). Default: INFO"
   echo "-sf   | --suite-log-file to enable writing suite logs to results/artefacts/<run>/pytest.log"
   echo "-bs   | --binary-search <mm> <xm> <dr> <pr> to enable automatic throughput search"

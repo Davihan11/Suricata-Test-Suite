@@ -151,6 +151,13 @@ DEFAULT_HUGEPAGES="6G"
 LOGLEVEL="INFO"
 ```
 
+**Note on hugepages:** `DEFAULT_HUGEPAGES` (or `--suricata-hugepages` when running pytest directly)
+is the amount of RAM requested for hugepages on the Suricata server. During setup, `conftest.py`
+compares the currently mounted hugepage memory (`HugePages_Total` × `Hugepagesize` from
+`/proc/meminfo`) against this requested amount and only runs `dpdk-hugepages.py --setup <size>`
+when the mounted amount is lower. This means increasing the requested size on a machine that
+already has hugepages mounted will trigger a re-allocation instead of being silently ignored.
+
 Note that an empty string ("") in `-d` (or `DEFAULT_TESTS`) is a valid value for running all tests
 and that setting `DEFAULT_TESTS` will prevent you from doing so.
 
@@ -411,7 +418,7 @@ sending packets at 0.3 * default cps of .pcap
 
 Binary search cycles through each `param.py` combination. The test execution flow is:
 
-1. **Setup** — Allocate hugepages, bind NIC, modify Suricata config.
+1. **Setup** — Allocate hugepages (up to the `--suricata-hugepages` amount), bind NIC, modify Suricata config.
 2. **Start Suricata** — Launch as a daemon on the remote host via SSH.
 3. **Start TRex** — Begin traffic at the current midpoint multiplier.
 4. **Wait** — Traffic runs for the configured duration (`--traffic-duration`).
