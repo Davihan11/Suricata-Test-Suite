@@ -506,6 +506,18 @@ the ASTF mode and `get_stf_profile` uses it to create an STF profile dynamically
 
 Results are saved to `results/artefacts/{timestamp}/{test_name}/`.
 
+By default each run is stored under a timestamp (e.g. `results/artefacts/2026-08-07-11:30/`).
+To organise and identify runs, you can set a custom label for the results directory with
+the `--run-label` option (or `-rl` in `pytest_start.sh`):
+
+```bash
+python3.11 -m pytest ... --run-label=experimental-pr-1234-300s
+```
+
+When a label is provided, results are saved to `results/artefacts/{label}/{test_name}/`
+(e.g. `results/artefacts/experimental-pr-1234-300s/test_http_simple/`) instead of the
+default timestamp directory.
+
 To compare results across multiple runs, use `util/make-graphs.py`:
 
 ```bash
