@@ -35,6 +35,7 @@ usage(){
   echo "-sh   | --suricata-hugepages [SIZE] to specify how much RAM to allocate in hugepages. Default is 6G."
   echo "-sl   | --suite-log-level [LEVEL] to set the logging level for the test suite: a name (DEBUG, INFO, PROGRESS, WARNING, ERROR, CRITICAL) or a number (e.g. 25). Default: INFO"
   echo "-sf   | --suite-log-file to enable writing suite logs to results/artefacts/<run>/pytest.log"
+  echo "-rl   | --run-label [LABEL] to set a custom name for the results directory, e.g. experimental-pr-1234-300s. Results are saved to results/artefacts/<label>/ instead of the default timestamp."
   echo "-bs   | --binary-search <mm> <xm> <dr> <pr> to enable automatic throughput search"
   echo "-bsh  | --binary-search-help to show help for binary search mode"
   exit 0
@@ -78,6 +79,7 @@ while [ "$#" -gt 0 ]; do
     -ht | --heatup) heatup_duration=$2; shift 2 ;;
     -sl | --suite-log-level) suite_log_level=$2; shift 2 ;;
     -sf | --suite-log-file) suite_log_file=true; shift ;;
+    -rl | --run-label) run_label=$2; shift 2 ;;
     -f | --filter) case $2 in rules) filter="rules and not norules";;
                         norules) filter="norules";;
                         *) filter="$2";;
@@ -241,6 +243,9 @@ extra_args+=("--suite-log-level=$suite_log_level")
 
 if [ "$suite_log_file" = true ]; then
     extra_args+=(--suite-log-file)
+fi
+if [ ! -z "$run_label" ]; then
+    extra_args+=(--run-label="$run_label")
 fi
 if [ -z "$VIRTUAL_ENV" ]; then
     if [ -d ".venv" ]; then

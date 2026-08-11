@@ -39,6 +39,26 @@ logger = get_logger(__name__)
 sys.modules["trex"] = trex
 
 
+def get_run_dir_name(config) -> str:
+    """Return the name of the results directory for this run.
+
+    Uses the ``--run-label`` option when provided (e.g. ``experimental-pr-1234``),
+    otherwise falls back to the default timestamp.
+    """
+    _label = config.getoption("--run-label")
+    if not _label:
+        return TIME_STR
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", _label):
+        raise pytest.UsageError(
+            "--run-label must be a single directory name using only letters, "
+            "numbers, dots, underscores, or hyphens (no path separators, and "
+            "must not start with a dot)"
+        )
+
+    return _label
+
+
 def _log_level_type(value: str) -> str | int:
     """Validate --suite-log-level: accept a level name or a numeric level.
 
@@ -78,6 +98,18 @@ def pytest_addoption(parser):
         default=False,
         action="store_true",
         help=("Enable writing suite logs into results/artefacts/<run>/pytest.log."),
+    )
+    parser.addoption(
+        "--run-label",
+        type=str,
+        default=None,
+        action="store",
+        help=(
+            "Custom name for the results directory, e.g. "
+            "'experimental-pr-1234-300s'. Results are saved under "
+            "results/artefacts/<label>/ instead of the default timestamp. "
+            "Useful for organising and identifying runs."
+        ),
     )
     parser.addoption(
         "--remote-host",
@@ -204,7 +236,7 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    run_dir = Path(PATH_TO_ARTEFACTS) / TIME_STR
+    run_dir = Path(PATH_TO_ARTEFACTS) / get_run_dir_name(config)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = None
@@ -422,7 +454,9 @@ def suricata_conf_file(request) -> ConfigBuilder:
 
 @pytest.fixture(scope="function")
 def result_path(request):
-    return os.path.join(PATH_TO_ARTEFACTS, TIME_STR, request.function.__name__)
+    return os.path.join(
+        PATH_TO_ARTEFACTS, get_run_dir_name(request.config), request.function.__name__
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
