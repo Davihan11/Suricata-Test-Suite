@@ -87,8 +87,7 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
         default="uptime",
         metavar="PATH",
         help=(
-            "Counter path (relative to .stats) used as the x-axis. "
-            "Default: 'uptime'."
+            "Counter path (relative to .stats) used as the x-axis. Default: 'uptime'."
         ),
     )
     parser.add_argument(
@@ -163,9 +162,11 @@ def _apply_filter(records: List[dict], filter_expr: str) -> List[dict]:
         except Exception as exc:  # jq raises on invalid input for the filter
             logger.warning("jq filter failed on a record: %s", exc)
             continue
-        # jq returns None for a non-matching select() and False/0 for a
-        # boolean/arithmetic expression that evaluates to false.
-        if result is None or result is False or result == 0:
+        # jq returns None for a non-matching select() and False for a boolean
+        # expression that evaluates to false. A numeric 0 is NOT treated as a
+        # non-match, so a bare-value filter (e.g. ``uptime``) keeps records
+        # where the value is 0.
+        if result is None or result is False:
             continue
         filtered.append(rec)
     return filtered
@@ -203,19 +204,30 @@ def _normalize_filter(filter_expr: str) -> str:
     return "." + filter_expr
 
 
-def _extract_series(records: List[dict], path: str) -> List[Tuple[float, float]]:
-    """Extract (x, y) points for a counter path across all records."""
-    compiled = jq.compile(f".stats.{path}")
+def _extract_series(
+    records: List[dict], x_path: str, y_path: str
+) -> List[Tuple[float, float]]:
+    """Extract aligned (x, y) points for a counter path across all records.
+
+    Both the x-axis value (``x_path``, e.g. ``uptime``) and the counter value
+    (``y_path``) are read from the *same* record, so the returned points are
+    always aligned even when some records are missing one of the paths. A
+    record is skipped (with a warning) only if either value cannot be
+    extracted.
+    """
+    x_compiled = jq.compile(f".stats.{x_path}")
+    y_compiled = jq.compile(f".stats.{y_path}")
     points: List[Tuple[float, float]] = []
     for rec in records:
         try:
-            value = compiled.input(rec).first()
+            x_value = x_compiled.input(rec).first()
+            y_value = y_compiled.input(rec).first()
         except Exception as exc:
-            logger.warning("Failed to extract %r: %s", path, exc)
+            logger.warning("Failed to extract %r/%r: %s", x_path, y_path, exc)
             continue
-        if value is None:
+        if x_value is None or y_value is None:
             continue
-        points.append(value)
+        points.append((x_value, y_value))
     return points
 
 
@@ -227,6 +239,11 @@ def _to_delta(points: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
     difference from the previous sample, i.e. the amount accumulated in that
     interval (a proxy for the rate). The first point is dropped since it has
     no predecessor.
+
+    Note: if Suricata restarts mid-run, a cumulative counter can decrease,
+    producing a negative delta. Callers that reduce the series to a single
+    value (e.g. ``_summarize_series`` with ``max``) are unaffected, but a
+    ``--delta`` plot will show a sharp negative dip at the restart.
     """
     deltas: List[Tuple[float, float]] = []
     for i in range(1, len(points)):
@@ -240,6 +257,11 @@ def _find_multiplier_dirs(test_dir: Path) -> List[Tuple[float, Path]]:
     """Find ``multiplier_*/eve-stats.json`` subdirectories under a test dir.
 
     Returns a list of ``(multiplier, eve_stats_path)`` sorted by multiplier.
+
+    The multiplier is parsed from the directory name suffix after
+    ``multiplier_`` (e.g. ``multiplier_2.5`` -> ``2.5``). Directories whose
+    suffix is not a valid float (e.g. ``multiplier_2.5x``) are skipped with a
+    warning, as are directories without an ``eve-stats.json``.
     """
     found: List[Tuple[float, Path]] = []
     for sub in sorted(test_dir.iterdir()):
@@ -263,10 +285,21 @@ def _summarize_series(points: List[Tuple[float, float]], use_delta: bool) -> flo
     Without ``use_delta`` returns the final (last) cumulative value. With
     ``use_delta`` returns the peak per-interval rate (max delta), which is a
     better proxy for the sustained throughput at a given multiplier.
+
+    Returns ``float("nan")`` when there is nothing to summarise (empty input,
+    or ``use_delta`` with fewer than two points, since a delta needs a
+    predecessor).
     """
     if not points:
         return float("nan")
     if use_delta:
+        if len(points) < 2:
+            logger.warning(
+                "Only %d point(s) for --delta; need at least 2 to compute a "
+                "rate. Returning NaN.",
+                len(points),
+            )
+            return float("nan")
         deltas = _to_delta(points)
         return max((d[1] for d in deltas), default=float("nan"))
     return float(points[-1][1])
@@ -275,6 +308,7 @@ def _summarize_series(points: List[Tuple[float, float]], use_delta: bool) -> flo
 def _plot(
     series: List[Tuple[str, List[Tuple[float, float]]]],
     x_label: str,
+    y_label: str,
     title: str | None,
     output: str | None,
 ) -> None:
@@ -287,7 +321,7 @@ def _plot(
         ys = [p[1] for p in points]
         ax.plot(xs, ys, label=name, marker="o", markersize=3)
     ax.set_xlabel(x_label)
-    ax.set_ylabel("counter value")
+    ax.set_ylabel(y_label)
     if title:
         ax.set_title(title)
     ax.legend()
@@ -316,13 +350,9 @@ def _main_by_multiplier(args: argparse.Namespace) -> int:
             return 1
         multipliers = _find_multiplier_dirs(test_dir)
         if not multipliers:
-            logger.error(
-                "No multiplier_*/eve-stats.json found under %s", test_dir
-            )
+            logger.error("No multiplier_*/eve-stats.json found under %s", test_dir)
             return 1
-        logger.info(
-            "Found %d multiplier runs under %s", len(multipliers), test_dir
-        )
+        logger.info("Found %d multiplier runs under %s", len(multipliers), test_dir)
 
         label = test_dir.name if len(args.input) > 1 else ""
         for counter_path in args.path:
@@ -332,18 +362,9 @@ def _main_by_multiplier(args: argparse.Namespace) -> int:
                 records = _read_stats_records(stats_path)
                 if args.filter:
                     records = _apply_filter(records, args.filter)
-                x_points = _extract_series(records, args.x_axis)
-                y_points = _extract_series(records, counter_path)
-                if len(y_points) != len(x_points):
-                    logger.warning(
-                        "Path %r produced %d points but x-axis has %d in %s; "
-                        "pairing by index may be misaligned.",
-                        counter_path,
-                        len(y_points),
-                        len(x_points),
-                        stats_path,
-                    )
-                points = list(zip(x_points, y_points))
+                # Extract x and y from the same record so they stay aligned
+                # even when some records lack the counter path.
+                points = _extract_series(records, args.x_axis, counter_path)
                 summary = _summarize_series(points, args.delta)
                 xs.append(multiplier)
                 ys.append(summary)
@@ -354,7 +375,8 @@ def _main_by_multiplier(args: argparse.Namespace) -> int:
         logger.error("No data to plot.")
         return 1
 
-    _plot(series, "multiplier", args.title, args.output)
+    y_label = "peak per-interval rate" if args.delta else "final counter value"
+    _plot(series, "multiplier", y_label, args.title, args.output)
     return 0
 
 
@@ -399,8 +421,8 @@ def main(argv: List[str] | None = None) -> int:
             logger.warning("No records remain in %s after filtering; skipping.", path)
             continue
 
-        # Extract the x-axis series once per file.
-        x_points = _extract_series(records, args.x_axis)
+        # Extract the x-axis series once per file to check it is present.
+        x_points = _extract_series(records, args.x_axis, args.x_axis)
         if not x_points:
             logger.warning(
                 "Could not extract x-axis path %r from %s; skipping.",
@@ -415,17 +437,9 @@ def main(argv: List[str] | None = None) -> int:
         # files are often all named eve-stats.json.
         label = path.parent.name if len(args.input) > 1 else ""
         for counter_path in args.path:
-            y_points = _extract_series(records, counter_path)
-            if len(y_points) != len(x_points):
-                logger.warning(
-                    "Path %r produced %d points but x-axis has %d in %s; "
-                    "pairing by index may be misaligned.",
-                    counter_path,
-                    len(y_points),
-                    len(x_points),
-                    path,
-                )
-            points = list(zip(x_points, y_points))
+            # Extract x and y from the same record so they stay aligned even
+            # when some records lack the counter path.
+            points = _extract_series(records, args.x_axis, counter_path)
             if args.delta:
                 points = _to_delta(points)
             name = f"{counter_path} ({label})" if label else counter_path
@@ -435,7 +449,8 @@ def main(argv: List[str] | None = None) -> int:
         logger.error("No data to plot from the given input files.")
         return 1
 
-    _plot(series, args.x_axis, args.title, args.output)
+    y_label = "per-interval rate" if args.delta else "counter value"
+    _plot(series, args.x_axis, y_label, args.title, args.output)
     return 0
 
 
