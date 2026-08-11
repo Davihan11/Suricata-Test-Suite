@@ -48,11 +48,17 @@ def get_run_dir_name(config) -> str:
     _label = config.getoption("--run-label")
     if not _label:
         return TIME_STR
-    
-    if _label in {".", "..", "/", "\\"} or any(part in {".", "..", "/", "\\"} for part in _label.split(os.path.sep)):
-        raise ValueError("--run-label must be a single directory name (no path separators or '.'/'..')")
+
+    if _label in {".", "..", "/", "\\"} or any(
+        part in {".", "..", "/", "\\"} for part in _label.split(os.path.sep)
+    ):
+        raise ValueError(
+            "--run-label must be a single directory name (no path separators or '.'/'..')"
+        )
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", _label):
-        raise ValueError("--run-label must only contain letters, numbers, underscores, or hyphens")
+        raise ValueError(
+            "--run-label must only contain letters, numbers, underscores, or hyphens"
+        )
 
     return _label
 
