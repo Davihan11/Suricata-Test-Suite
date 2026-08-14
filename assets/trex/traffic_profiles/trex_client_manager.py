@@ -461,10 +461,14 @@ class BaseTrexClientManager:
                             f"got {len(self.pcaps)}"
                         )
                     pcap_path = str(self.pcaps[0].path)
+                    # TRex requires an integer packet count; the CLI parses
+                    # --trex-stl-burst as floats, so cast total_pkts to int.
                     stream = STLStream(
                         name="S0",
                         packet=STLPktBuilder(pkt=pcap_path),
-                        mode=STLTXSingleBurst(pps=pps, total_pkts=total_pkts),
+                        mode=STLTXSingleBurst(
+                            pps=pps, total_pkts=int(total_pkts)
+                        ),
                     )
 
                     client.add_streams([stream], ports=[0])
