@@ -188,33 +188,17 @@ def pytest_addoption(parser):
         ),
     )
     parser.addoption(
-        "--trex-exact-count",
-        action="store_true",
-        default=False,
-        help=(
-            "Send an exact number of packets in STL mode using STLTXSingleBurst. "
-            "The packet count and rate are controlled by --trex-total-packets and "
-            "--trex-pps. Ignored (with a warning) for non-STL modes."
-        ),
-    )
-    parser.addoption(
-        "--trex-pps",
+        "--trex-stl-burst",
+        nargs="*",
         type=float,
-        default=200_000,
+        default=None,
         action="store",
+        metavar=("PPS", "PACKET_COUNT"),
         help=(
-            "Packets per second for the STL exact-count mode "
-            "(STLTXSingleBurst pps). Default: 200000."
-        ),
-    )
-    parser.addoption(
-        "--trex-total-packets",
-        type=int,
-        default=10_000_000,
-        action="store",
-        help=(
-            "Total number of packets to send for the STL exact-count mode "
-            "(STLTXSingleBurst total_pkts). Default: 10000000."
+            "In STL mode, send a fixed burst of PACKET_COUNT packets at PPS "
+            "instead of replaying for the configured duration. With no "
+            "arguments, defaults to 200000 PPS and 10000000 packets. Only "
+            "applies to STL mode; ignored (with a warning) for other modes."
         ),
     )
 

@@ -32,48 +32,58 @@ def merge_pcaps(pcap_paths: list[Path], weights: list[float], out_path: Path) ->
     Merges several pcaps into one by interleaving their packets
     proportionally to `weights` (weighted round-robin).
 
+    Packets are read and written one at a time (streaming) so that large
+    pcaps are not loaded fully into memory.
+
     Returns `out_path` with the merged pcap written.
     """
-    from scapy.all import rdpcap, wrpcap
+    from scapy.all import PcapReader, PcapWriter
 
     if len(pcap_paths) != len(weights):
         raise ValueError("pcap_paths and weights must have the same length")
     if any(w <= 0 for w in weights):
         raise ValueError("all weights must be positive")
 
-    streams = [rdpcap(str(p)) for p in pcap_paths]
     total_w = sum(weights)
     if total_w <= 0:
         raise ValueError("sum of weights must be positive")
 
     # weighted round-robin: each source emits packets per round proportional to
     # its share of the total weight, scaled so the smallest positive quota emits 1
-    total_pkts = sum(len(s) for s in streams)
     quotas = [w / total_w for w in weights]
     min_q = min(q for q in quotas if q > 0)
     # zero-weight sources emit nothing; others emit at least 1 packet per round
     per_round = [0 if q <= 0 else max(1, round(q / min_q)) for q in quotas]
 
-    merged = []
-    indices = [0] * len(streams)
-    remaining = total_pkts
-    while remaining > 0:
-        for si, stream in enumerate(streams):
-            for _ in range(per_round[si]):
-                if indices[si] < len(stream):
-                    merged.append(stream[indices[si]])
-                    indices[si] += 1
-                    remaining -= 1
-                    if remaining <= 0:
-                        break
-
+    readers = [PcapReader(str(p)) for p in pcap_paths]
+    iters = [iter(r) for r in readers]
+    exhausted = [False] * len(iters)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    wrpcap(str(out_path), merged)
+
+    total = 0
+    try:
+        with PcapWriter(str(out_path), append=False, sync=True) as writer:
+            while not all(exhausted):
+                for si, it in enumerate(iters):
+                    if exhausted[si]:
+                        continue
+                    for _ in range(per_round[si]):
+                        try:
+                            pkt = next(it)
+                        except StopIteration:
+                            exhausted[si] = True
+                            break
+                        writer.write(pkt)
+                        total += 1
+    finally:
+        for r in readers:
+            r.close()
+
     logger.info(
         "Merged %d pcaps into %s (%d packets, weights=%s)",
         len(pcap_paths),
         out_path.name,
-        len(merged),
+        total,
         weights,
     )
     return out_path

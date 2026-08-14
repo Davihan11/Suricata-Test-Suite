@@ -82,11 +82,11 @@ The TRex traffic generator has support for different ways of generating traffic:
   - when multiple PCAPs are supplied, they are **merged into a single PCAP** (packets interleaved
     proportionally to their weights) and replayed together, instead of being replayed one after another
   - STL also supports an **exact packet count** variant: instead of replaying a PCAP for a fixed
-    duration, it sends a **fixed, exact number of packets** using TRex's `STLTXSingleBurst` stream
-    mode. This is enabled with the `--trex-exact-count` flag and is useful for deterministic tests
-    where you want to send precisely `N` packets at a given rate. The packet count stays fixed, but
-    the send rate (`pps`) is scaled by the traffic multiplier, so it works with multiplier
-    enumeration and binary search. See [STL exact-count options](#stl-exact-count-options) below.
+    duration, it sends a **fixed, exact number of packets**. This is enabled with the
+    `--trex-stl-burst [<PPS> <PACKET_COUNT>]` option and is useful for
+    deterministic tests where you want to send precisely `N` packets at a given rate. The packet
+    count stays fixed, but the send rate (`pps`) is scaled by the traffic multiplier, so it works
+    with multiplier enumeration and binary search. See [STL exact-count mode](#stl-exact-count-mode) below.
 - STF mode *(stateful)*
   - mixture of the ASTF and STL modes
   - one TRex instance sending out traffic based on a profile
@@ -159,24 +159,6 @@ DEFAULT_HUGEPAGES="6G"
 LOGLEVEL="INFO"
 ```
 
-### STL exact-count options
-
-The STL exact-count variant sends a fixed number of packets at a fixed rate. It is enabled with the
-`--trex-exact-count` flag (or `-ec` in `pytest_start.sh`). The packet count and rate are controlled
-via `pytest_start.sh` flags or direct pytest options:
-
-| `pytest_start.sh` flag | pytest option | Default | Description |
-|---|---|---|---|
-| `-ec` | `--trex-exact-count` | off | Enable exact packet count in STL mode (`STLTXSingleBurst`) |
-| `-pps <PPS>` | `--trex-pps` | `200000` | Packets per second for the exact-count mode (`STLTXSingleBurst` pps) |
-| `-tp <COUNT>` | `--trex-total-packets` | `10000000` | Total number of packets to send for the exact-count mode (`STLTXSingleBurst` total_pkts) |
-
-Example:
-```bash
-# Send 1000 packets at 100 pps using STL exact-count mode
-./pytest_start.sh -s claret -d http_simple -fm stl -f norules -ec -pps 100 -tp 1000
-```
-
 Note that an empty string ("") in `-d` (or `DEFAULT_TESTS`) is a valid value for running all tests
 and that setting `DEFAULT_TESTS` will prevent you from doing so.
 
@@ -226,7 +208,7 @@ To force a specific TRex mode, use `--force-trex-mode` (skips tests that don't s
 `stf`, and `stl`. For example:
 
 ```bash
-python3.11 -m pytest ... --force-trex-mode stl --trex-exact-count --trex-pps 100 --trex-total-packets 1000 "tests/http_simple"
+python3.11 -m pytest ... --force-trex-mode stl --trex-stl-burst 100 1000 "tests/http_simple"
 ```
 
 ## 4. Available tests
@@ -273,31 +255,33 @@ packets at 1x multiplier (so ~2 million pps) and this doesn't change with packet
 
 ### STL exact-count mode
 
-The STL exact-count variant sends a **fixed, exact number of packets** at a fixed rate, using
-TRex's `STLTXSingleBurst` stream mode. Unlike the regular STL mode (which replays a PCAP for a
-fixed duration), it sends precisely `N` packets and then stops.
+The STL exact-count variant sends a **fixed, exact number of packets** at a fixed rate. Unlike
+the regular STL mode (which replays a PCAP for a fixed duration), it sends precisely `N` packets
+and then stops.
 
 This is useful for deterministic tests where you want to control exactly how many packets
-reach Suricata. It is enabled by passing `--trex-exact-count` (or `-ec` in `pytest_start.sh`)
-while running in STL mode. If the flag is set while a non-STL mode is active, it is ignored
-with a warning.
+reach Suricata. It is enabled by passing `--trex-stl-burst [<PPS> <PACKET_COUNT>]` (or
+`-sb [<PPS> <COUNT>]` in `pytest_start.sh`) while running in STL mode. If the option is set
+while a non-STL mode is active, it is ignored with a warning.
 
-The packet rate and count are controlled via:
+The packet rate and count are given together as a single option. With no arguments, the
+defaults are used (200000 PPS, 10000000 packets):
 
-| `pytest_start.sh` flag | pytest option | Default | Description |
-|---|---|---|---|
-| `-ec` | `--trex-exact-count` | off | Enable exact packet count in STL mode (`STLTXSingleBurst`) |
-| `-pps <PPS>` | `--trex-pps` | `200000` | Packets per second (`STLTXSingleBurst` pps) |
-| `-tp <COUNT>` | `--trex-total-packets` | `10000000` | Total number of packets to send (`STLTXSingleBurst` total_pkts) |
+| `pytest_start.sh` flag | pytest option | Description |
+|---|---|---|
+| `-sb [<PPS> <COUNT>]` | `--trex-stl-burst [<PPS> <PACKET_COUNT>]` | Send a fixed burst of `PACKET_COUNT` packets at `PPS` in STL mode (defaults: 200000 PPS, 10000000 packets) |
 
 The packet count stays fixed, but the send rate (`pps`) is scaled by the traffic multiplier
-(`effective_pps = --trex-pps * multiplier`), so exact-count works with both multiplier
+(`effective_pps = PPS * multiplier`), so exact-count works with both multiplier
 enumeration and binary search.
 
-Example:
+Examples:
 ```bash
 # Send 1000 packets at 100 pps using STL exact-count mode
-./pytest_start.sh -s claret -d http_simple -fm stl -f norules -ec -pps 100 -tp 1000
+./pytest_start.sh -s claret -d http_simple -fm stl -f norules -sb 100 1000
+
+# Use the default burst (200000 pps, 10000000 packets)
+./pytest_start.sh -s claret -d http_simple -fm stl -f norules -sb
 ```
 
 ---
@@ -563,9 +547,9 @@ For examples see `realistic_traffic_trex_profile.py`
 and can be used in the same situations as STL. When multiple PCAPs are supplied, the base class merges them into a single
 interleaved PCAP (packets mixed proportionally to their weights) so they are replayed together rather than one after another.
 
-STL also supports an **exact packet count** variant: when the `--trex-exact-count` flag is set, the base class's `run()`
-sends a fixed number of packets using `STLTXSingleBurst` instead of the duration-based replay. The packet rate and count are
-read from the `--trex-pps` and `--trex-total-packets` pytest options. This is enabled with `--trex-exact-count` (or `-ec` in
+STL also supports an **exact packet count** variant: when the `--trex-stl-burst [<PPS> <PACKET_COUNT>]`
+option is set, the base class's `run()` sends a fixed number of packets instead of the
+duration-based replay. This is enabled with `--trex-stl-burst` (or `-sb` in
 `pytest_start.sh`) while running in STL mode.
 
 You are not limited to one TRex mode per profile. For example you can define a TRex profile that has a native ASTF TRex config, which is used for
