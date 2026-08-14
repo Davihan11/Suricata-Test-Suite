@@ -31,7 +31,7 @@ def merge_pcaps(
     pcap_paths: list[Path],
     weights: list[float],
     out_path: Path,
-    max_packets: int = 100_000,
+    max_packets: int | None = None,
 ) -> Path:
     """
     Merges several pcaps into one by interleaving their packets
@@ -40,11 +40,15 @@ def merge_pcaps(
     Packets are read and written one at a time (streaming) so that large
     pcaps are not loaded fully into memory.
 
-    A short pcap with a large weight would otherwise be exhausted quickly and
-    become under-represented relative to its expected weight. To avoid this,
-    exhausted streams are restarted (looped back to the beginning) until the
-    merged output reaches `max_packets` packets, so every source keeps
-    contributing proportionally for the whole merged file.
+    When `max_packets` is set, a short pcap with a large weight would
+    otherwise be exhausted quickly and become under-represented relative to
+    its expected weight. To avoid this, exhausted streams are restarted
+    (looped back to the beginning) until the merged output reaches
+    `max_packets` packets, so every source keeps contributing proportionally
+    for the whole merged file.
+
+    When `max_packets` is `None` (default), no cap is applied: each source is
+    merged exactly once and the merge stops when every source is exhausted.
 
     Returns `out_path` with the merged pcap written.
     """
@@ -54,7 +58,7 @@ def merge_pcaps(
         raise ValueError("pcap_paths and weights must have the same length")
     if any(w <= 0 for w in weights):
         raise ValueError("all weights must be positive")
-    if max_packets <= 0:
+    if max_packets is not None and max_packets <= 0:
         raise ValueError("max_packets must be positive")
 
     total_w = sum(weights)
@@ -90,7 +94,7 @@ def merge_pcaps(
     total = 0
     try:
         with PcapWriter(str(out_path), append=False, sync=True) as writer:
-            while total < max_packets:
+            while max_packets is None or total < max_packets:
                 # if every source is exhausted/empty, there is nothing left to
                 # write; stop to avoid an infinite loop
                 if all(per_round[si] == 0 or empty[si] for si in range(len(iters))):
@@ -99,11 +103,16 @@ def merge_pcaps(
                     if per_round[si] == 0 or empty[si]:
                         continue
                     for _ in range(per_round[si]):
-                        if total >= max_packets:
+                        if max_packets is not None and total >= max_packets:
                             break
                         try:
                             pkt = next(it)
                         except StopIteration:
+                            if max_packets is None:
+                                # no cap: merge each source exactly once, so an
+                                # exhausted stream contributes nothing further
+                                empty[si] = True
+                                break
                             # restart the exhausted stream so it keeps
                             # contributing proportionally to its weight
                             readers[si].close()

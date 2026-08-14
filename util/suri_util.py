@@ -63,6 +63,18 @@ class RunInfo:
     trex_client_stats: dict | None = None
     trex_server_stats: dict | None = None
     trex_pretty_stats: dict = field(default_factory=dict)
+    # Actual wall-clock time (seconds) TRex spent transmitting. In the STL
+    # exact-count burst mode (`--trex-stl-burst`) the burst stops on its own
+    # once `total_pkts` packets are sent, so this differs from the configured
+    # `traffic_duration`. 0 means "not measured" (fall back to the configured
+    # duration).
+    transmit_seconds: float = 0.0
+    # TRex's own cumulative transmit counters sampled at the start of the
+    # measurement window (after heatup). Used to compute `trex_tx_packets` /
+    # `trex_tx_bytes` as what TRex sent *during* the measured window, rather
+    # than approximating the skip from Suricata's receive counters.
+    trex_tx_packets_at_start: int = 0
+    trex_tx_bytes_at_start: int = 0
 
 
 def get_last_stats_line(file: str) -> str:
@@ -144,48 +156,6 @@ def get_rx_bytes_until(file: str, until: int) -> int:
 
     try:
         return int(output["total"]) - int(output["missed"]) * int(output["average"])
-    except ValueError:
-        return 0
-
-
-def get_total_packets_until(file: str, until: int) -> int:
-    try:
-        json_file = open(file, "r")
-    except FileNotFoundError:
-        return 0
-
-    json_loaded = json_file.read()
-    output = (
-        jq.compile(
-            f"select(.stats.uptime >= {until})| [.] | first| .stats.decoder.pkts"
-        )
-        .input_text(json_loaded)
-        .first()
-    )
-
-    try:
-        return int(output)
-    except ValueError:
-        return 0
-
-
-def get_total_bytes_until(file: str, until: int) -> int:
-    try:
-        json_file = open(file, "r")
-    except FileNotFoundError:
-        return 0
-
-    json_loaded = json_file.read()
-    output = (
-        jq.compile(
-            f"select(.stats.uptime >= {until})| [.] | first| .stats.decoder.bytes"
-        )
-        .input_text(json_loaded)
-        .first()
-    )
-
-    try:
-        return int(output)
     except ValueError:
         return 0
 
@@ -337,10 +307,20 @@ def save_aggregated_stats(
     )
     eve_stats_path = os.path.join(suri_stats_path, "eve-stats.json")
     delay_time = test_info.heatup_duration + run_info.suricata_start_delay
+    # In the STL exact-count burst mode the burst stops on its own once the
+    # fixed packet count is sent, so the actual transmit time is measured by
+    # TRex and stored in `run_info.transmit_seconds`. Fall back to the
+    # configured traffic duration for the regular duration-based replay.
+    if run_info.transmit_seconds > 0:
+        transmit_seconds = run_info.transmit_seconds
+    elif test_info.traffic_duration < 0:
+        transmit_seconds = 0
+    else:
+        transmit_seconds = test_info.traffic_duration
     output: dict = {
         "event": "test_results",
         "trex_multiplier": run_info.multiplier,
-        "transmit_seconds": test_info.traffic_duration,
+        "transmit_seconds": transmit_seconds,
         "suricata_rx_packets": get_rx_packets_from_file(
             eve_stats_path, skip=delay_time
         ),
@@ -349,13 +329,9 @@ def save_aggregated_stats(
             eve_stats_path, skip=delay_time
         ),
         "trex_tx_packets": run_info.trex_pretty_stats["opackets"]
-        - get_total_packets_until(
-            eve_stats_path, test_info.heatup_duration + run_info.suricata_start_delay
-        ),
+        - run_info.trex_tx_packets_at_start,
         "trex_tx_bytes": run_info.trex_pretty_stats["obytes"]
-        - get_total_bytes_until(
-            eve_stats_path, test_info.heatup_duration + run_info.suricata_start_delay
-        ),
+        - run_info.trex_tx_bytes_at_start,
         "parameters": out_params,
     }
 
