@@ -35,6 +35,9 @@ TIME_STR = time.strftime("-".join(["%Y", "%m", "%d", "%H:%M"]))
 PATH_TO_ARTEFACTS: str = str(Path(__file__).parent / "results" / "artefacts")
 logger = get_logger(__name__)
 
+# Defaults for --trex-stl-burst when it is given without arguments: (PPS, PACKET_COUNT).
+STL_BURST_DEFAULTS: Tuple[float, int] = (200_000, 10_000_000)
+
 # alias lbr_trex_client.interactive.trex to trex for importing native TRex profiles
 sys.modules["trex"] = trex
 
@@ -60,6 +63,45 @@ def _log_level_type(value: str) -> str | int:
     raise argparse.ArgumentTypeError(
         f"invalid log level: {value!r} (expected a number or one of: {valid})"
     )
+
+
+def _fmt_thousands(value: int) -> str:
+    """Format an integer with space thousands separators (e.g. 200000 -> '200 000')."""
+    return f"{value:,}".replace(",", " ")
+
+
+def _parse_stl_burst(values: List[str]) -> Tuple[float, int]:
+    """Parse ``--trex-stl-burst [PPS] [PACKET_COUNT]`` into a typed tuple.
+
+    ``PPS`` is parsed as a float and ``PACKET_COUNT`` as a positive integer,
+    so a non-integer packet count is rejected up front instead of being
+    silently truncated downstream. With no arguments the defaults
+    (``STL_BURST_DEFAULTS``) are returned. Raises ``argparse.ArgumentTypeError``
+    for malformed input.
+    """
+    if not values:
+        return STL_BURST_DEFAULTS
+    if len(values) != 2:
+        raise argparse.ArgumentTypeError(
+            "--trex-stl-burst accepts 0 or 2 arguments "
+            "(<PPS> <PACKET_COUNT>), got "
+            f"{len(values)}"
+        )
+    try:
+        pps = float(values[0])
+        total_pkts = int(values[1])
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--trex-stl-burst expects numeric <PPS> <PACKET_COUNT>, got {values!r}"
+        )
+    if pps <= 0:
+        raise argparse.ArgumentTypeError(f"--trex-stl-burst PPS must be > 0, got {pps}")
+    if total_pkts <= 0:
+        raise argparse.ArgumentTypeError(
+            "--trex-stl-burst PACKET_COUNT must be a positive integer, "
+            f"got {total_pkts}"
+        )
+    return (pps, total_pkts)
 
 
 def pytest_addoption(parser):
@@ -188,33 +230,18 @@ def pytest_addoption(parser):
         ),
     )
     parser.addoption(
-        "--trex-exact-count",
-        action="store_true",
-        default=False,
-        help=(
-            "Send an exact number of packets in STL mode using STLTXSingleBurst. "
-            "The packet count and rate are controlled by --trex-total-packets and "
-            "--trex-pps. Ignored (with a warning) for non-STL modes."
-        ),
-    )
-    parser.addoption(
-        "--trex-pps",
-        type=float,
-        default=200_000,
+        "--trex-stl-burst",
+        nargs="*",
+        type=str,
+        default=None,
         action="store",
+        metavar=("PPS", "PACKET_COUNT"),
         help=(
-            "Packets per second for the STL exact-count mode "
-            "(STLTXSingleBurst pps). Default: 200000."
-        ),
-    )
-    parser.addoption(
-        "--trex-total-packets",
-        type=int,
-        default=10_000_000,
-        action="store",
-        help=(
-            "Total number of packets to send for the STL exact-count mode "
-            "(STLTXSingleBurst total_pkts). Default: 10000000."
+            "In STL mode, send a fixed burst of PACKET_COUNT packets at PPS "
+            "instead of replaying for the configured duration. With no "
+            f"arguments, defaults to {_fmt_thousands(STL_BURST_DEFAULTS[0])} "
+            f"PPS and {_fmt_thousands(STL_BURST_DEFAULTS[1])} packets. Only "
+            "applies to STL mode; ignored (with a warning) for other modes."
         ),
     )
 
@@ -234,6 +261,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    _validate_stl_burst_option(config)
+
     run_dir = Path(PATH_TO_ARTEFACTS) / TIME_STR
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -247,6 +276,25 @@ def pytest_configure(config):
         config.getoption("--suite-log-level"),
         log_file or "disabled",
     )
+
+
+def _validate_stl_burst_option(config) -> None:
+    """Validate ``--trex-stl-burst`` up front and store the typed tuple.
+
+    A malformed value (e.g. a non-integer packet count) would otherwise
+    surface as a raw error from inside the TRex client. Parsing here in
+    ``pytest_configure`` turns it into a clean ``pytest.UsageError`` that
+    names the offending value before any fixture runs, and stores the typed
+    ``(float, int)`` tuple so consumers don't re-parse it.
+    """
+    raw = config.getoption("--trex-stl-burst")
+    if raw is None:
+        return
+    try:
+        parsed = _parse_stl_burst(raw)
+    except argparse.ArgumentTypeError as e:
+        raise pytest.UsageError(str(e)) from e
+    config.option.trex_stl_burst = parsed
 
 
 def pytest_runtest_logstart(nodeid, location):
