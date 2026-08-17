@@ -63,6 +63,12 @@ class RunInfo:
     trex_client_stats: dict | None = None
     trex_server_stats: dict | None = None
     trex_pretty_stats: dict = field(default_factory=dict)
+    # TRex's own cumulative transmit counters sampled at the start of the
+    # measurement window (after heatup). Used to compute `trex_tx_packets` /
+    # `trex_tx_bytes` as what TRex sent *during* the measured window, rather
+    # than approximating the skip from Suricata's receive counters.
+    trex_tx_packets_at_start: int = 0
+    trex_tx_bytes_at_start: int = 0
 
 
 def get_last_stats_line(file: str) -> str:
@@ -144,48 +150,6 @@ def get_rx_bytes_until(file: str, until: int) -> int:
 
     try:
         return int(output["total"]) - int(output["missed"]) * int(output["average"])
-    except ValueError:
-        return 0
-
-
-def get_total_packets_until(file: str, until: int) -> int:
-    try:
-        json_file = open(file, "r")
-    except FileNotFoundError:
-        return 0
-
-    json_loaded = json_file.read()
-    output = (
-        jq.compile(
-            f"select(.stats.uptime >= {until})| [.] | first| .stats.decoder.pkts"
-        )
-        .input_text(json_loaded)
-        .first()
-    )
-
-    try:
-        return int(output)
-    except ValueError:
-        return 0
-
-
-def get_total_bytes_until(file: str, until: int) -> int:
-    try:
-        json_file = open(file, "r")
-    except FileNotFoundError:
-        return 0
-
-    json_loaded = json_file.read()
-    output = (
-        jq.compile(
-            f"select(.stats.uptime >= {until})| [.] | first| .stats.decoder.bytes"
-        )
-        .input_text(json_loaded)
-        .first()
-    )
-
-    try:
-        return int(output)
     except ValueError:
         return 0
 
@@ -349,13 +313,9 @@ def save_aggregated_stats(
             eve_stats_path, skip=delay_time
         ),
         "trex_tx_packets": run_info.trex_pretty_stats["opackets"]
-        - get_total_packets_until(
-            eve_stats_path, test_info.heatup_duration + run_info.suricata_start_delay
-        ),
+        - run_info.trex_tx_packets_at_start,
         "trex_tx_bytes": run_info.trex_pretty_stats["obytes"]
-        - get_total_bytes_until(
-            eve_stats_path, test_info.heatup_duration + run_info.suricata_start_delay
-        ),
+        - run_info.trex_tx_bytes_at_start,
         "parameters": out_params,
     }
 
