@@ -183,7 +183,11 @@ def _apply_filter(records: List[dict], filter_expr: str) -> List[dict]:
     # call, not a field access. Prepend ``.`` so the common ``uptime > 30``
     # form works as ``.uptime > 30`` without requiring the user to type it.
     filter_expr = _normalize_filter(filter_expr)
-    compiled = jq.compile(filter_expr)
+    try:
+        compiled = jq.compile(filter_expr)
+    except ValueError as exc:
+        logger.error("Invalid jq filter %r: %s", filter_expr, exc)
+        return []
     filtered: List[dict] = []
     for rec in records:
         stats = rec.get("stats")
@@ -217,7 +221,7 @@ def _normalize_filter(filter_expr: str) -> str:
         return filter_expr
 
     # Preserve any leading whitespace so it is not lost when we prepend the
-    # dot to the first identifier token (e.g. ' uptime > 30' -> '.uptime > 30').
+    # dot to the first identifier token (e.g. ' uptime > 30' -> ' .uptime > 30').
     leading_ws = filter_expr[: len(filter_expr) - len(stripped)]
 
     # Consume the leading identifier token (letters, digits, underscores).
@@ -273,7 +277,19 @@ def _extract_series(
             continue
         if x_value is None or y_value is None:
             continue
-        points.append((x_value, y_value))
+        try:
+            x_f = float(x_value)
+            y_f = float(y_value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Non-numeric %r/%r value in a record (x=%r, y=%r); skipping.",
+                x_path,
+                y_path,
+                x_value,
+                y_value,
+            )
+            continue
+        points.append((x_f, y_f))
     return points
 
 
