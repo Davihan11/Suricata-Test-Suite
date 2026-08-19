@@ -438,6 +438,8 @@ class BaseTrexClientManager:
             )
 
         def _mark_measurement_start() -> None:
+            if not blocking:
+                return
             if heatup > 0:
                 sleep(heatup)
             if on_measurement_start is not None:
