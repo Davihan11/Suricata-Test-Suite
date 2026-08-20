@@ -549,11 +549,6 @@ def hugepages_allocated(request) -> bool:
             page_size_bytes = _parse_size_to_bytes(" ".join(parts[1:]))
 
     allocated_bytes = total_pages * page_size_bytes
-    # ``dpdk-hugepages.py --setup <size>`` actually allocates double the
-    # requested amount (e.g. ``--setup 4G`` allocates 8G), so halve the read
-    # value to compare against the requested (single) amount. Without this,
-    # requesting 5G would see 8G already allocated and skip re-allocation.
-    allocated_bytes //= 2
     requested_bytes = request.config.getoption("--suricata-hugepages")
 
     return allocated_bytes >= requested_bytes
