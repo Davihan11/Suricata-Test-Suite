@@ -494,9 +494,7 @@ def _parse_size_to_bytes(size: str) -> int:
         raise ValueError(f"Couldn't parse byte count from {size!r}")
     value = int(match.group(1))
     unit = match.group(2) or ""
-    # Normalize e.g. "KB" -> "K" (meminfo prints "kB").
-    if unit.endswith("B") and len(unit) > 1:
-        unit = unit[:-1]
+    unit = unit.removesuffix("B")
     multipliers = {
         "": 1,
         "K": 1024,
@@ -508,28 +506,6 @@ def _parse_size_to_bytes(size: str) -> int:
     if unit not in multipliers:
         raise ValueError(f"Unknown size unit {unit!r} in {size!r}")
     return value * multipliers[unit]
-
-
-def _bytes_to_size(size: int) -> str:
-    """Format a byte count as a compact size string (e.g. ``6G``).
-
-    Inverse of ``_parse_size_to_bytes``, used to hand the requested amount back
-    to ``dpdk-hugepages.py --setup``, which expects a size string rather than a
-    raw byte count. Picks the largest unit that divides the value evenly.
-    """
-    if size == 0:
-        return "0"
-    units = [
-        (1024**5, "P"),
-        (1024**4, "T"),
-        (1024**3, "G"),
-        (1024**2, "M"),
-        (1024, "K"),
-    ]
-    for factor, suffix in units:
-        if size % factor == 0:
-            return f"{size // factor}{suffix}"
-    return str(size)
 
 
 def hugepages_allocated(request) -> bool:
@@ -560,7 +536,7 @@ def hugepages_allocated(request) -> bool:
     #   HugePages_Total:    3072
     #   Hugepagesize:       2048 kB
     total_pages = 0
-    page_size_kb = 0
+    page_size_bytes = 0
     for line in stdout.splitlines():
         parts = line.split()
         if len(parts) < 2:
@@ -568,9 +544,11 @@ def hugepages_allocated(request) -> bool:
         if parts[0] == "HugePages_Total:":
             total_pages = int(parts[1])
         elif parts[0] == "Hugepagesize:":
-            page_size_kb = int(parts[1])
+            # The value carries its own unit (e.g. "2048 kB"), so reuse the
+            # size parser rather than assuming kB.
+            page_size_bytes = _parse_size_to_bytes(" ".join(parts[1:]))
 
-    allocated_bytes = total_pages * page_size_kb * 1024
+    allocated_bytes = total_pages * page_size_bytes
     # ``dpdk-hugepages.py --setup <size>`` actually allocates double the
     # requested amount (e.g. ``--setup 4G`` allocates 8G), so halve the read
     # value to compare against the requested (single) amount. Without this,
@@ -588,14 +566,14 @@ def check_hugepages(request) -> None:
         return
 
     requested_bytes = request.config.getoption("--suricata-hugepages")
-    logger.info("Allocating huge-pages: %s", _bytes_to_size(requested_bytes))
+    logger.info("Allocating huge-pages: %s bytes", requested_bytes)
     process_set_hugepages = executable.Tool(
-        f"dpdk-hugepages.py --setup {_bytes_to_size(requested_bytes)}",
+        f"dpdk-hugepages.py --setup {requested_bytes}",
         sudo=True,
         executor=get_suri_executor(request),
     )
     process_reserve_hugepages = executable.Tool(
-        f"dpdk-hugepages.py --reserve {_bytes_to_size(requested_bytes)}",
+        f"dpdk-hugepages.py --reserve {requested_bytes}",
         sudo=True,
         executor=get_suri_executor(request),
     )
@@ -621,11 +599,6 @@ def check_hugepages(request) -> None:
                 reserve_e,
             )
             return
-    else:
-        # --setup succeeded; still reserve the pages so they are actually
-        # pinned for Suricata.
-        _, stderr = process_reserve_hugepages.run()
-        stderr_parts.append(stderr)
 
     combined_stderr = "\n".join(part for part in stderr_parts if part)
     assert combined_stderr == "", f"Error while allocating hugepages: {combined_stderr}"
