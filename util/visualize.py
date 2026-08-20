@@ -577,7 +577,11 @@ def _append_file_series(
 
     # Compile the x-axis program once per file and reuse it for the presence
     # check and every counter path.
-    x_compiled = _compile_path(args.x_axis)
+    try:
+        x_compiled = _compile_path(args.x_axis)
+    except ValueError as exc:
+        logger.error("Invalid x-axis path %r: %s", args.x_axis, exc)
+        return 1
 
     # Extract the x-axis series once per file to check it is present.
     x_points = _extract_series(
@@ -599,7 +603,11 @@ def _append_file_series(
     for counter_path in args.path:
         # Extract x and y from the same record so they stay aligned even when
         # some records lack the counter path.
-        y_compiled = _compile_path(counter_path)
+        try:
+            y_compiled = _compile_path(counter_path)
+        except ValueError as exc:
+            logger.error("Invalid counter path %r: %s", counter_path, exc)
+            continue
         points = _extract_series(
             records, x_compiled, y_compiled, args.x_axis, counter_path
         )
@@ -645,9 +653,17 @@ def _append_multiplier_series(
     # The x-axis is always the multiplier in this mode, so use a fixed
     # time-like field (uptime) for extraction. Compile it once per test
     # directory and reuse it for every counter and multiplier.
-    x_compiled = _compile_path("uptime")
+    try:
+        x_compiled = _compile_path("uptime")
+    except ValueError as exc:  # pragma: no cover - "uptime" is a fixed literal
+        logger.error("Invalid x-axis path %r: %s", "uptime", exc)
+        return 1
     for counter_path in args.path:
-        y_compiled = _compile_path(counter_path)
+        try:
+            y_compiled = _compile_path(counter_path)
+        except ValueError as exc:
+            logger.error("Invalid counter path %r: %s", counter_path, exc)
+            continue
         xs: List[float] = []
         ys: List[float] = []
         extracted_any = False
