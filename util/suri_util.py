@@ -63,11 +63,11 @@ class RunInfo:
     trex_client_stats: dict | None = None
     trex_server_stats: dict | None = None
     trex_pretty_stats: dict = field(default_factory=dict)
-    # actual transmit time; 0 means "not measured" (fall back to traffic_duration)
     transmit_seconds: float = 0.0
-    # TRex transmit counters sampled at the start of the measurement window
     trex_tx_packets_at_start: int = 0
     trex_tx_bytes_at_start: int = 0
+    trex_tx_pps_at_start: float = 0.0
+    trex_tx_pps_samples: list[float] = field(default_factory=list)
 
 
 def get_last_stats_line(file: str) -> str:
@@ -300,7 +300,6 @@ def save_aggregated_stats(
     )
     eve_stats_path = os.path.join(suri_stats_path, "eve-stats.json")
     delay_time = test_info.heatup_duration + run_info.suricata_start_delay
-    # use the measured burst time when available, else the configured duration
     if run_info.transmit_seconds > 0:
         transmit_seconds = run_info.transmit_seconds
     elif test_info.traffic_duration < 0:
@@ -322,6 +321,8 @@ def save_aggregated_stats(
         - run_info.trex_tx_packets_at_start,
         "trex_tx_bytes": run_info.trex_pretty_stats["obytes"]
         - run_info.trex_tx_bytes_at_start,
+        "trex_tx_pps": run_info.trex_tx_pps_at_start,
+        "trex_tx_pps_samples": run_info.trex_tx_pps_samples,
         "parameters": out_params,
     }
 

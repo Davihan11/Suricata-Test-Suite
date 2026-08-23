@@ -86,6 +86,8 @@ class TrexTestRun(TestRun):
         def on_measurement_start():
             run_info.trex_tx_packets_at_start = self.trex_client.get_tx_packets()
             run_info.trex_tx_bytes_at_start = self.trex_client.get_tx_bytes()
+            # instantaneous tx rate while traffic is running (mid-window)
+            run_info.trex_tx_pps_at_start = self.trex_client.get_tx_pps()
 
         self.trex_client.run(
             blocking=True,

@@ -32,8 +32,6 @@ from trex.astf import trex_astf_profile
 from trex.astf.trex_astf_client import ASTFClient
 from trex.common.trex_exceptions import TRexError
 from trex.stl.trex_stl_client import STLClient
-from trex.stl.trex_stl_packet_builder_scapy import STLPktBuilder
-from trex.stl.trex_stl_streams import STLStream, STLTXSingleBurst
 from trex_client import CTRexClient
 from pytest import FixtureRequest
 
@@ -447,18 +445,39 @@ class BaseTrexClientManager:
                             "--trex-stl-burst requires a single (merged) pcap; "
                             f"got {len(self.pcaps)}"
                         )
-                    pcap_path = str(self.pcaps[0].path)
-                    stream = STLStream(
-                        name="S0",
-                        packet=STLPktBuilder(pkt=pcap_path),
-                        mode=STLTXSingleBurst(pps=pps, total_pkts=total_pkts),
-                    )
-
-                    client.add_streams([stream], ports=[0])
-                    # burst stops on its own; -1 (unlimited) so it's never truncated at low multipliers
+                    pcap = self.pcaps[0]
+                    if blocking and on_measurement_start is not None:
+                        on_measurement_start()
                     burst_start = time()
-                    client.start(ports=[0], duration=-1)
-                    _mark_measurement_start()
+                    client.push_remote(
+                        pcap_filename=str(self.get_remote_data_path(pcap.path)),
+                        ports=[0],
+                        ipg_usec=1e6 / base_pps,
+                        speedup=self.multiplier,
+                        count=0,  # loop until duration elapses
+                        duration=total_pkts / pps,
+                    )
+                    if run_info is not None:
+                        burst_duration = total_pkts / pps if pps > 0 else 0.0
+                        # sample tx rate 4x at absolute offsets to verify TRex sustains the pps
+                        n_samples = 4
+                        samples: list[float] = []
+                        for i in range(n_samples):
+                            frac = i / n_samples
+                            target = burst_start + burst_duration * frac
+                            remaining = target - time()
+                            if remaining > 0:
+                                sleep(remaining)
+                            samples.append(self.get_tx_pps())
+                        run_info.trex_tx_pps_at_start = samples[0]
+                        run_info.trex_tx_pps_samples = samples
+                        logger.debug(
+                            "Mid-burst tx rate samples: %s pps (expected %.2f pps, "
+                            "multiplier %s)",
+                            ", ".join(f"{s:.2f}" for s in samples),
+                            pps,
+                            self.multiplier,
+                        )
                 else:
                     pcap = self.pcaps[0]
                     start = time()
@@ -591,6 +610,27 @@ class BaseTrexClientManager:
                     "trex-global"
                 ]["data"]
                 return int(data["m_total_tx_bytes"])
+
+    def get_tx_pps(self) -> float:
+        """Current instantaneous TRex transmit rate (packets per second).
+
+        This is TRex's own reported rate (`tx_pps`), sampled at the moment of
+        the call. It is an instantaneous snapshot, not an average over the
+        burst, so it should be sampled while traffic is actively running to be
+        meaningful.
+        """
+        match self.mode:
+            case TrexMode.STL:
+                return float(self.stl_generator.get_stats()["total"]["tx_pps"])
+            case TrexMode.ASTF:
+                return float(self.server.get_stats()["total"]["tx_pps"]) + float(
+                    self.client.get_stats()["total"]["tx_pps"]
+                )
+            case TrexMode.STF:
+                data = self.stf_generator.get_result_obj().get_latest_dump()[
+                    "trex-global"
+                ]["data"]
+                return float(data.get("m_tx_pps", 0.0))
 
     def get_stats(self, role: Literal["server"] | Literal["client"] = "server") -> Dict:
         assert role in ("server", "client")
