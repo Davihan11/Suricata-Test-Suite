@@ -149,11 +149,12 @@ class BaseTrexClientManager:
                 if len(self.pcaps) > 1:
                     local_paths = [p.path for p in self.pcaps]
                     weights = [float(p.weight) for p in self.pcaps]
-                    # Use a per-test unique name so sequential/parallel runs don't collide.
+                    # Use a per-run unique name so reruns don't reuse a stale remote
+                    # file (rsync uses --update) and parallel runs don't collide.
                     merged_name = (
                         "stl_merged_"
                         + re.sub(r"[^A-Za-z0-9_.-]", "_", self.request.node.nodeid)
-                        + ".pcap"
+                        + f"_{os.getpid()}_{int(time() * 1000)}.pcap"
                     )
                     merged_path = merge_pcaps(
                         local_paths,
@@ -446,24 +447,24 @@ class BaseTrexClientManager:
                             f"got {len(self.pcaps)}"
                         )
                     pcap = self.pcaps[0]
-                    if blocking and on_measurement_start is not None:
-                        on_measurement_start()
+                    burst_duration = total_pkts / pps if pps > 0 else 0.0
                     burst_start = time()
                     client.push_remote(
                         pcap_filename=str(self.get_remote_data_path(pcap.path)),
                         ports=[0],
                         ipg_usec=1e6 / base_pps,
                         speedup=self.multiplier,
-                        count=0,  # loop until duration elapses
-                        duration=total_pkts / pps,
+                        count=0,
+                        duration=burst_duration,
                     )
+                    if blocking and on_measurement_start is not None:
+                        if heatup > 0 and burst_duration > 0:
+                            sleep(min(heatup, burst_duration))
+                        on_measurement_start()
                     if run_info is not None:
-                        burst_duration = total_pkts / pps if pps > 0 else 0.0
-                        # sample tx rate 4x at absolute offsets to verify TRex sustains the pps
-                        n_samples = 4
+                        sample_fracs = (0.10, 0.35, 0.65, 0.90)
                         samples: list[float] = []
-                        for i in range(n_samples):
-                            frac = i / n_samples
+                        for frac in sample_fracs:
                             target = burst_start + burst_duration * frac
                             remaining = target - time()
                             if remaining > 0:
