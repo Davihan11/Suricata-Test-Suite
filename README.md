@@ -158,7 +158,7 @@ and that setting `DEFAULT_TESTS` will prevent you from doing so.
 ### Examples
 
 ```bash
-# Full run: collect tests in `tests/http_simple` and run each for 5 minutes.
+# Full run: collect tests in `performance_tests/http_simple` and run each for 5 minutes.
 ./pytest_start.sh -s claret -tg trex2 -d http_simple -t 300 -p 0000:3b:00.0
 # Note: the `-t` flag is interpreted by the individual test functions, which usually means that
 # there is a for loop that runs the test multiple times with different TRex multipliers for `-t`
@@ -191,12 +191,19 @@ python3.11 -m pytest \
     --param-file="param.py" \
     --traffic-duration=300 \
     -s --suite-log-level=info \
-    "tests/http_simple"
+    "performance_tests/http_simple"
 ```
 
 For all available pytest options, see `conftest.py::pytest_addoption` or run `python3.11 -m pytest --help`. For rules/norules testing, use '-k "norules"' or '-k "rules and not norules"'
 
 ## 4. Available tests
+
+Tests are split into two top-level directories:
+
+| Directory | Purpose |
+|-----------|---------|
+| `performance_tests/` | Throughput and drop-rate under load |
+| `functional_tests/` | Correctness of Suricata behavior (e.g. RSS queueing, flow hashing) |
 
 Each tests subdirectory (e.g., `http_simple/`, `https_simple/`) is a test suite. Every suite has `_norules` (baseline,
 no inspection rules) and `_rules` (full ruleset) variants. Browse the test directories to see what's available, or run:

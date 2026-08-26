@@ -174,16 +174,28 @@ fi
 defined_tests=$(echo "$defined_tests" | awk '{
     # Trim leading and trailing whitespace
     gsub(/^[[:space:]]+|[[:space:]]+$/, "")
-
-    # Prepend "tests/" if not already present
-    for (i = 1; i <= NF; i++) {
-        if ($i !~ /^tests\//) {
-            $i = "tests/" $i
-        }
-    }
-
     print
 }')
+
+resolved_tests=""
+for test in $defined_tests; do
+    case "$test" in
+        performance_tests/*|functional_tests/*)
+            resolved_tests+=" $test"
+            ;;
+        *)
+            if [ -d "performance_tests/$test" ]; then
+                resolved_tests+=" performance_tests/$test"
+            elif [ -d "functional_tests/$test" ]; then
+                resolved_tests+=" functional_tests/$test"
+            else
+                echo "Warning: test '$test' not found in performance_tests/ or functional_tests/, passing through as-is." >&2
+                resolved_tests+=" $test"
+            fi
+            ;;
+    esac
+done
+defined_tests=$(echo "$resolved_tests" | sed 's/^ //')
 
 if [ -z "$defined_time" ]; then
     if [ ! -z "$DEFAULT_TIME" ]; then
