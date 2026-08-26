@@ -668,3 +668,4 @@ Logging behavior is controlled via command-line options:
 | Hugepages not allocated | Check with `cat /proc/meminfo \| grep HugePages` on the Suricata server. |
 | NIC not bound to correct driver | Run `dpdk-devbind -s` on the Suricata server to check driver bindings. |
 | `sudo -E sh -c 'lshw -c network \| grep -c <PCIe> > /tmp/pcie_count'` has failed with code 1. | Check your PCIes for typos |
+| PCAP not updated after modifying source files | Source pcaps are cached on the TRex server. If a pcap was modified in place without being renamed, use `-fpu` / `--force-pcap-upload` to force re-upload. |

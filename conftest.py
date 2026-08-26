@@ -233,6 +233,16 @@ def pytest_addoption(parser):
         ),
     )
     parser.addoption(
+        "--force-pcap-upload",
+        action="store_true",
+        default=False,
+        help=(
+            "Force re-upload of pcaps to the TRex server, even if identical "
+            "files already exist. Use this when source pcaps have been "
+            "modified in place without being renamed."
+        ),
+    )
+    parser.addoption(
         "--trex-stl-burst",
         nargs="*",
         type=str,

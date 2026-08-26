@@ -9,7 +9,6 @@ TRex profile template for use in Suricata-Test-Suite
 
 import logging
 import os
-import re
 import warnings
 from pathlib import Path
 from time import sleep, time
@@ -32,8 +31,6 @@ from trex.astf import trex_astf_profile
 from trex.astf.trex_astf_client import ASTFClient
 from trex.common.trex_exceptions import TRexError
 from trex.stl.trex_stl_client import STLClient
-from trex.stl.trex_stl_packet_builder_scapy import STLPktBuilder
-from trex.stl.trex_stl_streams import STLStream, STLTXSingleBurst
 from trex_client import CTRexClient
 from pytest import FixtureRequest
 
@@ -45,6 +42,7 @@ from util.trex_util import (
     TrexMode,
     get_trex_mac,
     merge_pcaps,
+    merged_pcap_name,
     mkdir_remote,
     send_to_remote,
 )
@@ -151,18 +149,14 @@ class BaseTrexClientManager:
                 if len(self.pcaps) > 1:
                     local_paths = [p.path for p in self.pcaps]
                     weights = [float(p.weight) for p in self.pcaps]
-                    # Use a per-test unique name so sequential/parallel runs don't collide.
-                    merged_name = (
-                        "stl_merged_"
-                        + re.sub(r"[^A-Za-z0-9_.-]", "_", self.request.node.nodeid)
-                        + ".pcap"
-                    )
+                    # Deterministic name so rsync skips upload on reruns;
+                    # use --force-pcap-upload to bypass when source pcaps change.
+                    merged_name = merged_pcap_name(local_paths, weights)
                     merged_path = merge_pcaps(
                         local_paths,
                         weights,
                         self.PCAP_PATH_PREFIX / merged_name,
                     )
-                    # effective divisor = sum of weights (sources interleaved at combined rate)
                     self.pcaps = [Pcap(merged_path, sum(weights))]
 
                 if target_vlan != 0:
@@ -174,7 +168,12 @@ class BaseTrexClientManager:
                 logger.info("Uploading pcap to TRex server. This might take a while.")
                 pcap = self.pcaps[0]
                 pcap_remote_path = self.get_remote_data_path(pcap.path)
-                send_to_remote(pcap.path, trex_hostname, pcap_remote_path)
+                send_to_remote(
+                    pcap.path,
+                    trex_hostname,
+                    pcap_remote_path,
+                    force=self.request.config.getoption("--force-pcap-upload"),
+                )
 
             case TrexMode.ASTF:
                 self.client: TRexAdvancedStateful = manager.request_stateful(
@@ -223,7 +222,10 @@ class BaseTrexClientManager:
                 config_path = Path(config.build())
                 config_remote_path = self.get_remote_data_path(config_path)
                 self.remote_stf_config = config_remote_path
-                send_to_remote(config_path, trex_hostname, config_remote_path)
+                force_upload = self.request.config.getoption("--force-pcap-upload")
+                send_to_remote(
+                    config_path, trex_hostname, config_remote_path, force=force_upload
+                )
 
                 for i, pcap in enumerate(self.pcaps):
                     pcap_path = pcap.path
@@ -231,11 +233,15 @@ class BaseTrexClientManager:
                         pcap_path = Path(edit_vlan(str(pcap_path), target_vlan))
                     self.pcaps[i] = Pcap(pcap_path, pcap.weight)
                     pcap_remote_path = self.get_remote_data_path(pcap_path)
-                    send_to_remote(pcap_path, trex_hostname, pcap_remote_path)
+                    send_to_remote(
+                        pcap_path, trex_hostname, pcap_remote_path, force=force_upload
+                    )
 
                 profile_path = self.get_stf_profile()
                 profile_remote_path = self.get_remote_data_path(profile_path)
-                send_to_remote(profile_path, trex_hostname, profile_remote_path)
+                send_to_remote(
+                    profile_path, trex_hostname, profile_remote_path, force=force_upload
+                )
 
     def get_remote_data_path(self, local_path: Path) -> Path:
         """
@@ -447,18 +453,39 @@ class BaseTrexClientManager:
                             "--trex-stl-burst requires a single (merged) pcap; "
                             f"got {len(self.pcaps)}"
                         )
-                    pcap_path = str(self.pcaps[0].path)
-                    stream = STLStream(
-                        name="S0",
-                        packet=STLPktBuilder(pkt=pcap_path),
-                        mode=STLTXSingleBurst(pps=pps, total_pkts=total_pkts),
-                    )
-
-                    client.add_streams([stream], ports=[0])
-                    # burst stops on its own; -1 (unlimited) so it's never truncated at low multipliers
+                    pcap = self.pcaps[0]
+                    burst_duration = total_pkts / pps if pps > 0 else 0.0
                     burst_start = time()
-                    client.start(ports=[0], duration=-1)
-                    _mark_measurement_start()
+                    client.push_remote(
+                        pcap_filename=str(self.get_remote_data_path(pcap.path)),
+                        ports=[0],
+                        ipg_usec=1e6 / base_pps,
+                        speedup=self.multiplier,
+                        count=0,
+                        duration=burst_duration,
+                    )
+                    if blocking and on_measurement_start is not None:
+                        if heatup > 0 and burst_duration > 0:
+                            sleep(min(heatup, burst_duration))
+                        on_measurement_start()
+                    if run_info is not None:
+                        sample_fracs = (0.10, 0.35, 0.65, 0.90)
+                        samples: list[float] = []
+                        for frac in sample_fracs:
+                            target = burst_start + burst_duration * frac
+                            remaining = target - time()
+                            if remaining > 0:
+                                sleep(remaining)
+                            samples.append(self.get_tx_pps())
+                        run_info.trex_tx_pps_at_start = samples[0]
+                        run_info.trex_tx_pps_samples = samples
+                        logger.debug(
+                            "Mid-burst tx rate samples: %s pps (expected %.2f pps, "
+                            "multiplier %s)",
+                            ", ".join(f"{s:.2f}" for s in samples),
+                            pps,
+                            self.multiplier,
+                        )
                 else:
                     pcap = self.pcaps[0]
                     start = time()
@@ -591,6 +618,27 @@ class BaseTrexClientManager:
                     "trex-global"
                 ]["data"]
                 return int(data["m_total_tx_bytes"])
+
+    def get_tx_pps(self) -> float:
+        """Current instantaneous TRex transmit rate (packets per second).
+
+        This is TRex's own reported rate (`tx_pps`), sampled at the moment of
+        the call. It is an instantaneous snapshot, not an average over the
+        burst, so it should be sampled while traffic is actively running to be
+        meaningful.
+        """
+        match self.mode:
+            case TrexMode.STL:
+                return float(self.stl_generator.get_stats()["total"]["tx_pps"])
+            case TrexMode.ASTF:
+                return float(self.server.get_stats()["total"]["tx_pps"]) + float(
+                    self.client.get_stats()["total"]["tx_pps"]
+                )
+            case TrexMode.STF:
+                data = self.stf_generator.get_result_obj().get_latest_dump()[
+                    "trex-global"
+                ]["data"]
+                return float(data.get("m_tx_pps", 0.0))
 
     def get_stats(self, role: Literal["server"] | Literal["client"] = "server") -> Dict:
         assert role in ("server", "client")
