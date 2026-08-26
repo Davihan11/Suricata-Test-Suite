@@ -179,6 +179,7 @@ defined_tests=$(echo "$defined_tests" | awk '{
 
 resolved_tests=""
 for test in $defined_tests; do
+    test="${test#tests/}"
     case "$test" in
         performance_tests/*|functional_tests/*)
             resolved_tests+=" $test"
