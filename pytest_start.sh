@@ -185,13 +185,22 @@ for test in $defined_tests; do
             resolved_tests+=" $test"
             ;;
         *)
-            if [ -d "performance_tests/$test" ]; then
-                resolved_tests+=" performance_tests/$test"
-            elif [ -d "functional_tests/$test" ]; then
-                resolved_tests+=" functional_tests/$test"
-            else
-                echo "Warning: test '$test' not found in performance_tests/ or functional_tests/, passing through as-is." >&2
+            if [ -d "$test" ]; then
                 resolved_tests+=" $test"
+            else
+                found=false
+                if [ -d "performance_tests/$test" ]; then
+                    resolved_tests+=" performance_tests/$test"
+                    found=true
+                fi
+                if [ -d "functional_tests/$test" ]; then
+                    resolved_tests+=" functional_tests/$test"
+                    found=true
+                fi
+                if [ "$found" = false ]; then
+                    echo "Warning: test '$test' not found in performance_tests/ or functional_tests/, passing through as-is." >&2
+                    resolved_tests+=" $test"
+                fi
             fi
             ;;
     esac
