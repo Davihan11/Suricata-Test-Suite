@@ -166,7 +166,7 @@ and that setting `DEFAULT_TESTS` will prevent you from doing so.
 ### Examples
 
 ```bash
-# Full run: collect tests in `tests/http_simple` and run each for 5 minutes.
+# Full run: collect tests in `performance_tests/http_simple` and run each for 5 minutes.
 ./pytest_start.sh -s claret -tg trex2 -d http_simple -t 300 -p 0000:3b:00.0
 # Note: the `-t` flag is interpreted by the individual test functions, which usually means that
 # there is a for loop that runs the test multiple times with different TRex multipliers for `-t`
@@ -199,7 +199,7 @@ python3.11 -m pytest \
     --param-file="param.py" \
     --traffic-duration=300 \
     -s --suite-log-level=info \
-    "tests/http_simple"
+    "performance_tests/http_simple"
 ```
 
 For all available pytest options, see `conftest.py::pytest_addoption` or run `python3.11 -m pytest --help`. For rules/norules testing, use '-k "norules"' or '-k "rules and not norules"'
@@ -209,7 +209,7 @@ To force a specific TRex mode, use `--force-trex-mode` (skips tests that don't s
 `stf`, and `stl`. For example:
 
 ```bash
-python3.11 -m pytest ... --force-trex-mode stl --trex-stl-burst 100 1000 "tests/http_simple"
+python3.11 -m pytest ... --force-trex-mode stl --trex-stl-burst 100 1000 "performance_tests/http_simple"
 ```
 
 ## 4. Available tests
