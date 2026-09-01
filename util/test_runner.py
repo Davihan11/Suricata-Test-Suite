@@ -38,7 +38,7 @@ class TestRun:
     def _collect_stats(self, run_info: RunInfo):
         """Attach TRex stats to *run_info* after traffic completes."""
 
-    def execute(self, multiplier: float, duration: int | None = None):
+    def execute(self, multiplier: float = 1.0, duration: int | None = None):
         if duration is None:
             duration = self.test_info.traffic_duration
 
@@ -73,11 +73,15 @@ class TrexTestRun(TestRun):
         test_info: TestInfo,
         params: dict,
         request: pytest.FixtureRequest,
+        pcap: str | None = None,
     ):
         super().__init__(suri_daemon, test_info, params, request)
         self.trex_client = trex_client
+        self.pcap = pcap
 
     def _before_traffic(self, multiplier: float, duration: int):
+        if self.pcap is not None:
+            self.trex_client.set_pcap(self.pcap)
         self.trex_client.set_props(multiplier, duration)
         self.trex_client.prepare()
 

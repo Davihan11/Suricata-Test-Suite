@@ -1,5 +1,6 @@
 """
 Author(s):  Matyáš Sedmidubský <matyas.sedmidubsky@cesnet.cz>
+            Dávid Hanko <david.hanko@cesnet.cz>
 
 Copyright: (C) 2026 CESNET, z.s.p.o.
 SPDX-License-Identifier: BSD-3-Clause
@@ -60,6 +61,7 @@ class BaseTrexClientManager:
     multiplier: float | None = None
     duration: int | None = None
     _stf_config_path: Path | None = None
+    _selected_pcap: str | None = None
 
     BASE_IPG_USEC = 12.0  # ~1 Gbps at 1500 bytes per packet
     PCAP_PATH_PREFIX = Path(__file__).parent / "pcaps"
@@ -100,20 +102,10 @@ class BaseTrexClientManager:
         trex_host = trex_gen[0].split(",")
         trex_hostname = trex_host[0]
         trex_pcie = trex_host[1]
+        self.trex_hostname = trex_hostname
 
         match self.mode:
             case TrexMode.STL:
-                # STL mode can only send one pcap at a time so it either
-                # needs to merge them together or replay them one by one
-                # currently it replays them one by one
-
-                # if STL mode gets used more in the future this should create a merged
-                # pcap that is at least a few seconds long, since we currently loop over
-                # the specified pcaps, which means that TRex can finish the PCAP in a
-                # few miliseconds and then wait for significantly longer until it receives
-                # a request to play another PCAP
-                # this would also allow for mixing the PCAPs together
-
                 self.stl_generator: TRexStateless = manager.request_stateless(request)
                 self.trex_version = (
                     self.stl_generator.get_handler().get_server_version()["version"]
@@ -316,6 +308,57 @@ class BaseTrexClientManager:
             multiplier,
             duration,
         )
+
+    @staticmethod
+    def _pcap_matches(pcap_entry: str, requested: str) -> bool:
+        """
+        Checks whether `requested` refers to the pcap file `pcap_entry`.
+
+        Matching is done by filename only, since the profile's pcaps all live
+        in `PCAP_PATH_PREFIX`. VLAN-tagged copies (`name.vlanNNN.pcap` created
+        by `edit_vlan`) are matched by their original name as well.
+        """
+        entry = Path(pcap_entry)
+        req = Path(requested)
+        if entry.name == req.name:
+            return True
+        return entry.stem.startswith(f"{req.stem}.vlan")
+
+    def set_pcap(self, pcap: str | Path) -> None:
+        """
+        Restricts traffic to a single pcap out of the profile's pcap list.
+
+        `pcap` must refer to one of the profile's pcaps, either by the original
+        filename or by the VLAN-tagged one. All profile pcaps are uploaded to
+        the TRex server in `__init__`, so the pcap itself doesn't need to be
+        re-uploaded. STF mode however builds its profile from the pcap list
+        upfront, so the profile is rebuilt and re-uploaded here.
+
+        Raises a ValueError if `pcap` is not part of the profile.
+        """
+        if self._selected_pcap is not None and self._pcap_matches(
+            self._selected_pcap, pcap
+        ):
+            return
+
+        selected = [p for p in self.pcaps if self._pcap_matches(p[0], pcap)]
+        if not selected:
+            raise ValueError(
+                f"'{pcap}' is not one of this profile's pcaps: "
+                f"{[p[0] for p in self.profile_pcaps]}"
+            )
+        self._selected_pcap = str(pcap)
+        self.pcaps = selected
+        logger.debug("TRex traffic restricted to pcap: %s", selected[0][0])
+
+        if self.mode == TrexMode.STF:
+            self._stf_config_path = None
+            profile_path = self.get_stf_profile()
+            send_to_remote(
+                profile_path,
+                self.trex_hostname,
+                self.get_remote_data_path(profile_path),
+            )
 
     def prepare(self) -> None:
         """
