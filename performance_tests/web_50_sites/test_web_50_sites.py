@@ -15,7 +15,9 @@ import logging
 
 from typing import List
 from lbr_testsuite import trex
-from assets.trex.traffic_profiles.web_50_sites_trex_profile import Web50SitesProfile
+from suricata_pytests.assets.trex.traffic_profiles.performance_tests.web_50_sites_trex_profile import (
+    Web50SitesProfile,
+)
 from util.suricata_manager import Suricata_manager
 from util.suri_util import TestInfo, get_drop_rate
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
