@@ -187,7 +187,7 @@ def send_to_remote(
     if destination is None:
         destination = source
 
-    rsync_flags = ["--ignore-times"] if force else ["--checksum", "--update"]
+    rsync_flags = ["--ignore-times"] if force else ["--checksum"]
     logger.debug(
         "Sending %s to remote %s:%s (force=%s)", source, hostname, destination, force
     )
