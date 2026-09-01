@@ -18,7 +18,7 @@ from typing import List
 from lbr_testsuite import trex
 from util.suricata_manager import Suricata_manager
 from util.suri_util import TestInfo, get_drop_rate
-from assets.trex.traffic_profiles.http_https_smb_trex_profile.profile import (
+from suricata_pytests.assets.trex.traffic_profiles.performance_tests.http_https_smb_trex_profile.profile import (
     HttpHttpsSmbProfile,
 )
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf

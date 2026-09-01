@@ -11,7 +11,7 @@ from pathlib import Path
 
 from util.config_builder import ConfigBuilder
 
-from .trex_client_manager import BaseTrexClientManager
+from ..trex_client_manager import BaseTrexClientManager
 
 # taken from web_50_sites/profile.yaml
 pcaps = [
