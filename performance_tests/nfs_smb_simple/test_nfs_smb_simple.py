@@ -18,8 +18,8 @@ from typing import List
 from lbr_testsuite import trex
 from util.suricata_manager import Suricata_manager
 from util.suri_util import TestInfo, get_drop_rate
-from assets.trex.traffic_profiles.http_https_smb_trex_profile.profile import (
-    HttpHttpsSmbProfile,
+from suricata_pytests.assets.trex.traffic_profiles.performance_tests.nfs_smb_trex_profile.profile import (
+    NfsSmbProfile,
 )
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
 from util.trex_util import TrexMode, get_trex_mode
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
     ],
     ids=["norules", "rules"],
 )
-def test_http_https_smb(
+def test_nfs_smb(
     request: pytest.FixtureRequest,
     trex_generators: dict,
     result_path: str,
@@ -53,6 +53,7 @@ def test_http_https_smb(
     get_target_vlan: int,
     b_search: dict | None,
 ):
+
     trex_manager: trex.TRexManager = trex.TRexManager(
         trex.TRexMachinesPool(trex_generators)
     )
@@ -78,7 +79,7 @@ def test_http_https_smb(
     )
 
     trex_mode = get_trex_mode(request, [TrexMode.ASTF, TrexMode.STF, TrexMode.STL])
-    trex_client = HttpHttpsSmbProfile(
+    trex_client = NfsSmbProfile(
         trex_manager, request, get_target_mac, get_target_vlan, mode=trex_mode
     )
 

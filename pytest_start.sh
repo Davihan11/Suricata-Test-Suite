@@ -21,7 +21,7 @@ usage(){
   echo "-tv   | --target-vlan [VLAN_ID] to specify what VLAN tag to use for generated traffic."
   echo '-d    | --defined-tests [TESTS] to specify tests, which have to be included, for all available tests run [-d|--defined-tests] " ",
   for specific tests: [-d|--defined-tests] "nfs_smb_simple https_simple" or use multiple parameter specification, for specific test from test file
-  use [-d|--defined-tests] https_simple/test_https_simple.py::test_https_norules, by default it runs http_simple tests'
+  use [-d|--defined-tests] https_simple/test_https_simple.py::test_https_simple, by default it runs http_simple tests'
   echo "-t    | --defined-time [TIME] to specify traffic duration in tests (seconds)"
   echo "-tg   | --trex-server-hostname [TRAFFIC GENERATOR] to specify traffic generator server for testing"
   echo "-p1   | --trex-server-port-1 [TRAFFIC GENERATOR PORT] to specify traffic generator port"
@@ -191,16 +191,39 @@ fi
 defined_tests=$(echo "$defined_tests" | awk '{
     # Trim leading and trailing whitespace
     gsub(/^[[:space:]]+|[[:space:]]+$/, "")
-
-    # Prepend "tests/" if not already present
-    for (i = 1; i <= NF; i++) {
-        if ($i !~ /^tests\//) {
-            $i = "tests/" $i
-        }
-    }
-
     print
 }')
+
+resolved_tests=""
+for test in $defined_tests; do
+    test="${test#tests/}"
+    case "$test" in
+        performance_tests/*|functional_tests/*)
+            resolved_tests+=" $test"
+            ;;
+        *)
+            test_path="${test%%::*}"
+            if [ -e "$test_path" ]; then
+                resolved_tests+=" $test"
+            else
+                found=false
+                if [ -e "performance_tests/$test_path" ]; then
+                    resolved_tests+=" performance_tests/$test"
+                    found=true
+                fi
+                if [ -e "functional_tests/$test_path" ]; then
+                    resolved_tests+=" functional_tests/$test"
+                    found=true
+                fi
+                if [ "$found" = false ]; then
+                    echo "Warning: test '$test' not found in performance_tests/ or functional_tests/, passing through as-is." >&2
+                    resolved_tests+=" $test"
+                fi
+            fi
+            ;;
+    esac
+done
+defined_tests=$(echo "$resolved_tests" | sed 's/^ //')
 
 if [ -z "$defined_time" ]; then
     if [ ! -z "$DEFAULT_TIME" ]; then

@@ -21,8 +21,15 @@ logger = logging.getLogger(__name__)
 def update_recursively(destination: Dict, source: Dict, extend_lists=True) -> Dict:
     for k, v in source.items():
         if isinstance(v, dict):
-            destination[k] = update_recursively(destination.get(k, {}), source)
-        elif isinstance(v, list) and extend_lists and isinstance(destination[k], list):
+            existing = destination.get(k)
+            destination[k] = update_recursively(
+                existing if isinstance(existing, dict) else {}, v
+            )
+        elif (
+            isinstance(v, list)
+            and extend_lists
+            and isinstance(destination.get(k), list)
+        ):
             destination[k].extend(v)
         else:
             destination[k] = v

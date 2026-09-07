@@ -18,7 +18,9 @@ from typing import List
 from lbr_testsuite import trex
 from util.suricata_manager import Suricata_manager
 from util.suri_util import TestInfo, get_drop_rate
-from assets.trex.traffic_profiles.http_trex_profile.profile import HttpProfile
+from suricata_pytests.assets.trex.traffic_profiles.performance_tests.https_trex_profile.profile import (
+    HttpsProfile,
+)
 from conftest import kill_pytest, get_trex_multi, suri_interface_bind, Suri_conf
 from util.trex_util import TrexMode, get_trex_mode
 from util.multiplier_iterator import multiplier_iterator_create
@@ -35,7 +37,7 @@ logger = logging.getLogger(__name__)
     ],
     ids=["norules", "rules"],
 )
-def test_http_simple(
+def test_https_simple(
     request: pytest.FixtureRequest,
     trex_generators: dict,
     result_path: str,
@@ -76,7 +78,7 @@ def test_http_simple(
     )
 
     trex_mode = get_trex_mode(request, [TrexMode.ASTF, TrexMode.STF, TrexMode.STL])
-    trex_client = HttpProfile(
+    trex_client = HttpsProfile(
         trex_manager, request, get_target_mac, get_target_vlan, mode=trex_mode
     )
 
