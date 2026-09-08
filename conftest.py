@@ -41,6 +41,10 @@ STL_BURST_DEFAULTS: Tuple[float, int] = (200_000, 10_000_000)
 # alias lbr_trex_client.interactive.trex to trex for importing native TRex profiles
 sys.modules["trex"] = trex
 
+# Make the parent directory importable so that absolute package imports such as
+# ``suricata_pytests.assets...`` resolve when pytest is launched from this directory
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 
 def get_run_dir_name(config) -> str:
     """Return the name of the results directory for this run.
