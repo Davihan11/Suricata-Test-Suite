@@ -70,6 +70,7 @@ STAGE_IP_LEN = {
 
 PACKETS_PER_STAGE = 1000
 ETHERNET_HEADER_LEN = 14
+VLAN_TAG_LEN = 4
 PKT_TOLERANCE = 32
 
 
@@ -109,16 +110,9 @@ def test_mtu(
         trex.TRexMachinesPool(trex_generators)
     )
 
-    suri_daemon: Suricata_manager = Suricata_manager(
-        request,
-        suricata_tmp_stats_path,
-        interface=suri_interface_bind(request)[0],
-        capture_mode=suri_interface_bind(request)[1],
-        conf_file=suri_conf.conf_file.with_params(params).build(),
-        rules_file=rules_file,
-    )
-
-    # force MTU size
+    # The MTU the test asserts against must match the test-local yaml.
+    # with_params() would let the parametrized value override it, so the
+    # forced MTU has to be set last, right before build().
     param_mtu = params.get("dpdk.interfaces[0].mtu")
     if param_mtu is not None and int(param_mtu) != TEST_MTU:
         logger.warning(
@@ -127,7 +121,16 @@ def test_mtu(
             param_mtu,
             TEST_MTU,
         )
-    suri_daemon.conf_file.set_option("dpdk.interfaces[0].mtu", TEST_MTU)
+    suri_daemon: Suricata_manager = Suricata_manager(
+        request,
+        suricata_tmp_stats_path,
+        interface=suri_interface_bind(request)[0],
+        capture_mode=suri_interface_bind(request)[1],
+        conf_file=suri_conf.conf_file.with_params(params)
+        .set_option("dpdk.interfaces[0].mtu", TEST_MTU)
+        .build(),
+        rules_file=rules_file,
+    )
 
     signal.signal(signal.SIGINT, kill_pytest)
 
@@ -154,7 +157,9 @@ def test_mtu(
 
     pcap = STAGE_PCAPS[stage]
     ip_len = STAGE_IP_LEN[stage]
-    frame_len = ip_len + ETHERNET_HEADER_LEN
+    # traffic is sent VLAN-tagged (see --target-vlan), so the decoded frame
+    # carries an extra 4-byte 802.1Q header after the Ethernet header
+    frame_len = ip_len + ETHERNET_HEADER_LEN + (VLAN_TAG_LEN if get_target_vlan else 0)
     logger.progress(
         f"Stage {stage} ({pcap}) | ip_len={ip_len} frame_len={frame_len} | "
         f"param_file={request.config.getoption('--param-file')} | params={params}"
