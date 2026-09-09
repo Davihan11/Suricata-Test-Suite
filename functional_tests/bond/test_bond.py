@@ -9,8 +9,8 @@ Suricata testing module.
 Bond PMD functional test - verifies traffic delivery through a DPDK bond
 (logical interface combining multiple physical ports). The test is
 parametrized by stage so a single stage can be selected and run in
-isolation via its node ID, e.g.
-`functional_tests/bond/test_bond.py::test_bond[2]`:
+isolation via its node ID (use --collect-only to find it), e.g.
+`functional_tests/bond/test_bond.py::test_bond[params0-2]`:
 
 * stage 1: single flow A (1000 pkts) is received intact through the
   bond (pkts + bytes asserted against the generated frame length)
