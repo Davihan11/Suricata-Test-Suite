@@ -46,9 +46,9 @@ Traffic:
   -tv   --target-vlan [VLAN_ID]        VLAN tag to use for generated traffic (default: 0)
   -pm   --prefer-trex-mode [MODE]      Suggest a mode for TRex. If unavailable,
                                         tests use their defaults
-  -fm   --force-trex-mode [MODE]        Force a TRex mode. If unavailable, tests get
+  -fm   --force-trex-mode [MODE]       Force a TRex mode. If unavailable, tests get
                                         skipped. Overrides -pm
-  -sb   --trex-stl-burst [PPS] [COUNT]  Send a fixed burst of COUNT packets at PPS
+  -sb   --trex-stl-burst [PPS] [COUNT] Send a fixed burst of COUNT packets at PPS
                                         in STL mode.
                                         Defaults: 200 000 PPS, 10 000 000 packets
 
@@ -72,8 +72,11 @@ Advanced:
                                         Enable automatic throughput search
   -bsh  --binary-search-help           Show help for binary search mode
 
-Defaults for connection options can also be set in a .env file in the
-repository root (DEFAULT_SURICATA_SERVER, DEFAULT_TREX_SERVER, ...).
+Defaults for all options can also be set in a .env file in the repository
+root; see .env.example for the full list of variables
+(DEFAULT_SURICATA_SERVER, DEFAULT_TREX_SERVER, DEFAULT_TREX_PORT1, DEFAULT_TREX_PORT2,
+DEFAULT_PCIES, DEFAULT_TARGET_MAC, DEFAULT_TARGET_VLAN, DEFAULT_TESTS, DEFAULT_TIME, DEFAULT_HEATUP,
+DEFAULT_HUGEPAGES, DEFAULT_SUITE_LOG_FILE, LOGLEVEL).
 EOF
   exit 0
 }
