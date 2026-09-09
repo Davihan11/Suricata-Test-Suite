@@ -9,8 +9,8 @@ Suricata testing module.
 MTU functional test - verifies jumbo frame handling on a DPDK interface
 with MTU 9000 (Suricata derives the mbuf/RX buffer size from the
 interface MTU). The test is parametrized by stage so a single stage can
-be selected and run in isolation via its node ID, e.g.
-`functional_tests/mtu/test_mtu.py::test_mtu[2]`:
+be selected and run in isolation via its node ID (use --collect-only to
+find it), e.g. `functional_tests/mtu/test_mtu.py::test_mtu[params0-2]`:
 
 * stage 1 (IP len 1500): baseline, standard frames must be received whole
 * stage 2 (IP len 1501): off-by-one above the standard MTU
