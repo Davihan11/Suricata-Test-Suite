@@ -489,7 +489,7 @@ def _parse_size_to_bytes(size: str) -> int:
     (e.g. ``2048 kB``) is also accepted.
     """
     size = size.strip().upper()
-    match = re.fullmatch(r"(\d+)\s*(.+)?", size)
+    match = re.fullmatch(r"(\d+)\s*([^\s]*)", size)
     if not match:
         raise ValueError(f"Couldn't parse byte count from {size!r}")
     value = int(match.group(1))
@@ -503,9 +503,10 @@ def _parse_size_to_bytes(size: str) -> int:
         "T": 1024**4,
         "P": 1024**5,
     }
-    if unit not in multipliers:
+    multiplier = multipliers.get(unit)
+    if multiplier is None:
         raise ValueError(f"Unknown size unit {unit!r} in {size!r}")
-    return value * multipliers[unit]
+    return value * multiplier
 
 
 def hugepages_allocated(request) -> bool:
@@ -567,36 +568,19 @@ def check_hugepages(request) -> None:
         sudo=True,
         executor=get_suri_executor(request),
     )
-    process_reserve_hugepages = executable.Tool(
-        f"dpdk-hugepages.py --reserve {requested_bytes}",
-        sudo=True,
-        executor=get_suri_executor(request),
-    )
 
-    stderr_parts = []
     try:
         _, stderr = process_set_hugepages.run()
-        stderr_parts.append(stderr)
     except executable.ExecutableProcessError as e:
-        logger.warning(
-            "dpdk-hugepages.py --setup failed (%s). Trying --reserve as a "
-            "last-ditch effort.",
+        logger.critical(
+            "Failed to allocate huge-pages (%s). Continuing with the "
+            "currently allocated huge-pages; tests that require more will "
+            "fail with a specific error.",
             e,
         )
-        try:
-            _, stderr = process_reserve_hugepages.run()
-            stderr_parts.append(stderr)
-        except executable.ExecutableProcessError as reserve_e:
-            logger.critical(
-                "Failed to allocate huge-pages (%s). Continuing with the "
-                "currently allocated huge-pages; tests that require more will "
-                "fail with a specific error.",
-                reserve_e,
-            )
-            return
+        return
 
-    combined_stderr = "\n".join(part for part in stderr_parts if part)
-    assert combined_stderr == "", f"Error while allocating hugepages: {combined_stderr}"
+    assert stderr == "", f"Error while allocating hugepages: {stderr}"
     logger.info("Huge-pages allocated successfully")
 
 
