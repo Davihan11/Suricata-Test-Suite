@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 SURI_PID = "/var/run/suricata.pid"
-DEFALUT_CONF_FILE = "/etc/suricata/suricata.yaml"
+DEFAULT_CONF_FILE = "/etc/suricata/suricata.yaml"
 DEFAULT_RULES_FILE = "/var/lib/suricata/rules/suricata.rules"
 REMOTE_SURICATA_DIR = f"/tmp/suricata-{int(time.time())}/"
 
@@ -42,7 +42,7 @@ class Suricata_manager:
         workers: List[int] = [],
         asynch: bool = False,
         log_dir: str = "/var/log/suricata",
-        conf_file: str = DEFALUT_CONF_FILE,
+        conf_file: str = DEFAULT_CONF_FILE,
         rules_file: str = DEFAULT_RULES_FILE,
     ):
         """Class Suricata_manager for controlling Suricata instance on remote machine
@@ -119,9 +119,9 @@ class Suricata_manager:
             Hierarchy of precedence which configration file to use:
             1. File set in command line when running pytest
             2. File set in Suricata_manager constructor
-            3. DEFALUT_CONF_FILE
+            3. DEFAULT_CONF_FILE
 
-            All configuration files except DEFALUT_CONF_FILE need to be
+            All configuration files except DEFAULT_CONF_FILE need to be
             stored on the machine that runs pytests as they are automatically copied
             to the remote machine that runs Suricata.
 
@@ -133,7 +133,7 @@ class Suricata_manager:
         conf_file : str
             Path to Suricata configuration file.
         """
-        if conf_file != DEFALUT_CONF_FILE:
+        if conf_file != DEFAULT_CONF_FILE:
             file_name: str = conf_file.split("/")[-1]
             remote_conf_file = f"{REMOTE_SURICATA_DIR}{file_name}"
 
@@ -272,7 +272,20 @@ class Suricata_manager:
             f"rm -f {self._pid_file}", sudo=True, executor=self.host_executor
         )
         process_destroy_pid.run()
-        time.sleep(2)
+        process_check_pid = executable.Tool(
+            f"test -f {self._pid_file}",
+            sudo=True,
+            executor=self.host_executor,
+            failure_verbosity="no-error",
+        )
+        # rc=0 means the file still exists (removal failed); rc=1 means it
+        # is gone (the desired state). "no-error" only silences logging, it
+        # does not suppress the exception.
+        try:
+            process_check_pid.run()
+            logger.warning("PID file %s still exists after removal", self._pid_file)
+        except ExecutableProcessError:
+            logger.debug("PID file %s removed", self._pid_file)
 
         process_destroy_eve = executable.Tool(
             f"rm -f {os.path.join(self.log_dir, 'eve.json')}",
@@ -280,7 +293,17 @@ class Suricata_manager:
             executor=self.host_executor,
         )
         process_destroy_eve.run()
-        time.sleep(2)
+        process_check_eve = executable.Tool(
+            f"test -f {os.path.join(self.log_dir, 'eve.json')}",
+            sudo=True,
+            executor=self.host_executor,
+            failure_verbosity="no-error",
+        )
+        try:
+            process_check_eve.run()
+            logger.warning("eve.json still exists in %s after removal", self.log_dir)
+        except ExecutableProcessError:
+            logger.debug("eve.json removed from %s", self.log_dir)
 
         process_destroy_eve_stats = executable.Tool(
             f"rm -f {os.path.join(self.log_dir, 'eve-stats.json')}",
@@ -288,7 +311,19 @@ class Suricata_manager:
             executor=self.host_executor,
         )
         process_destroy_eve_stats.run()
-        time.sleep(2)
+        process_check_eve_stats = executable.Tool(
+            f"test -f {os.path.join(self.log_dir, 'eve-stats.json')}",
+            sudo=True,
+            executor=self.host_executor,
+            failure_verbosity="no-error",
+        )
+        try:
+            process_check_eve_stats.run()
+            logger.warning(
+                "eve-stats.json still exists in %s after removal", self.log_dir
+            )
+        except ExecutableProcessError:
+            logger.debug("eve-stats.json removed from %s", self.log_dir)
 
         proces_destroy_suricata_log = executable.Tool(
             f"rm -f {os.path.join(self.log_dir, 'suricata.log')} || true",
@@ -296,14 +331,43 @@ class Suricata_manager:
             executor=self.host_executor,
         )
         proces_destroy_suricata_log.run()
-        time.sleep(2)
+        process_check_suricata_log = executable.Tool(
+            f"test -f {os.path.join(self.log_dir, 'suricata.log')}",
+            sudo=True,
+            executor=self.host_executor,
+            failure_verbosity="no-error",
+        )
+        try:
+            process_check_suricata_log.run()
+            logger.warning(
+                "suricata.log still exists in %s after removal", self.log_dir
+            )
+        except ExecutableProcessError:
+            logger.debug("suricata.log removed from %s", self.log_dir)
 
         process_destroy_tmp_files = executable.Tool(
             f"rm -rf {self.local_tmp_stats}/suricata-{self.user}",
             sudo=True,
+            executor=self.host_executor,
         )
         process_destroy_tmp_files.run()
-        time.sleep(2)
+        process_check_tmp_files = executable.Tool(
+            f"test -d {self.local_tmp_stats}/suricata-{self.user}",
+            sudo=True,
+            executor=self.host_executor,
+            failure_verbosity="no-error",
+        )
+        try:
+            process_check_tmp_files.run()
+            logger.warning(
+                "directory %s/suricata-%s still exists after removal",
+                self.local_tmp_stats,
+                self.user,
+            )
+        except ExecutableProcessError:
+            logger.debug(
+                "directory %s/suricata-%s removed", self.local_tmp_stats, self.user
+            )
 
         suri_cmd = f"suricata -c {self.conf_file} -l {self.log_dir} -S {self.rules_file} -D --{self.capture_mode} --pidfile {self._pid_file}"
         logger.info("Starting Suricata: %s", suri_cmd)

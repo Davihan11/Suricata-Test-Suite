@@ -183,7 +183,13 @@ def send_to_remote(
     destination: Path | None = None,
     force: bool = False,
 ):
-    """Upload *source* to *hostname* via rsync."""
+    """Upload *source* to *hostname* via rsync.
+
+    SSH host keys are accepted automatically on first connect
+    (StrictHostKeyChecking=accept-new), and an SSH-level failure is
+    reported as a clear, actionable error instead of a raw
+    CalledProcessError traceback.
+    """
     if destination is None:
         destination = source
 
@@ -191,16 +197,25 @@ def send_to_remote(
     logger.debug(
         "Sending %s to remote %s:%s (force=%s)", source, hostname, destination, force
     )
-    subprocess.run(
-        [
-            "rsync",
-            "-z",
-            *rsync_flags,
-            str(source),
-            f"{os.environ['USER']}@{hostname}:{str(destination)}",
-        ],
-        check=True,
-    )
+    cmd = [
+        "rsync",
+        "-z",
+        "-e",
+        "ssh -o StrictHostKeyChecking=accept-new",
+        *rsync_flags,
+        str(source),
+        f"{os.environ['USER']}@{hostname}:{str(destination)}",
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 255:
+            raise RuntimeError(
+                f"SSH to {hostname} failed (rsync exit code 255) — check "
+                f"known_hosts and key-based authentication for "
+                f"{os.environ['USER']}@{hostname}."
+            ) from e
+        raise
 
 
 def mkdir_remote(dir: Path, hostname: str):

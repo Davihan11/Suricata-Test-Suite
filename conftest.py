@@ -544,21 +544,51 @@ def suricata_tmp_stats_path():
     return "/tmp"
 
 
+def _run_version_query(executor, command: str) -> str:
+    """Run a version-gathering command on the Suricata host and return stripped
+    stdout, or "unknown" when the command fails (e.g. not installed).
+
+    Version detection must never break a test run, so failures are logged at
+    debug level and reported as "unknown" in the results.
+    """
+    query = executable.Tool(
+        command,
+        executor=executor,
+        failure_verbosity="no-error",
+    )
+    try:
+        stdout, _ = query.run()
+        return stdout.strip()
+    except executable.ExecutableProcessError as e:
+        logger.debug("Version query %r failed: %s", command, e)
+        return "unknown"
+
+
 @pytest.fixture(scope="function")
 def utilized_programs_info(request):
     logger.info("Gathering utilized program versions")
-    get_dpdk_version_process = executable.Tool(
-        "pkg-config --modversion libdpdk", executor=get_suri_executor(request)
-    )
-    dpdk_version, _ = get_dpdk_version_process.run()
+    executor = get_suri_executor(request)
 
-    get_suricata_version_process = executable.Tool(
-        "suricata --build-info | head -1", executor=get_suri_executor(request)
+    dpdk_version = _run_version_query(executor, "pkg-config --modversion libdpdk")
+
+    suricata_build_info = _run_version_query(executor, "suricata --build-info")
+    suricata_version = " ".join(suricata_build_info.splitlines()[0].split()[4:])
+
+    # NIC driver + version (e.g. "driver: mlx5_core\nversion: ...") and CPU
+    # model identify the hardware setup in aggregated.json, which matters when
+    # comparing results across machines.
+    nic_driver = _run_version_query(
+        executor, f"ethtool -i {suri_interface_bind(request)[0]}"
     )
-    suricata_version, _ = get_suricata_version_process.run()
+    cpu_model = _run_version_query(
+        executor, "lscpu | grep 'Model name' | cut -d: -f2 | sed 's/^ *//'"
+    )
+
     versions = {
-        "dpdk_version": dpdk_version.strip(),
-        "suricata_version": " ".join(suricata_version.split()[4:]),
+        "dpdk_version": dpdk_version,
+        "suricata_version": suricata_version,
+        "nic_driver_info": nic_driver,
+        "cpu_model": cpu_model,
     }
     logger.info("Program versions: %s", versions)
     return versions
