@@ -5,21 +5,23 @@ Copyright: (C) 2026 CESNET, z.s.p.o.
 SPDX-License-Identifier: BSD-3-Clause
 """
 
+from pathlib import Path
+
 from lbr_testsuite.trex import TRexManager
 from pytest import FixtureRequest
 
-from assets.trex.traffic_profiles.trex_client_manager import BaseTrexClientManager
+from assets.trex.traffic_profiles.trex_client_manager import BaseTrexClientManager, Pcap
 from util.trex_util import TrexMode
 
 
 class MtuProfile(
     BaseTrexClientManager,
     pcaps=[
-        ("mtu_flow_a_1500_1000p.pcap", 1),
-        ("mtu_flow_a_1501_1000p.pcap", 1),
-        ("mtu_flow_a_7000_1000p.pcap", 1),
-        ("mtu_flow_a_9000_1000p.pcap", 1),
-        ("mtu_flow_a_9001_1000p.pcap", 1),
+        Pcap(Path("mtu_flow_a_1500_1000p.pcap"), 1),
+        Pcap(Path("mtu_flow_a_1501_1000p.pcap"), 1),
+        Pcap(Path("mtu_flow_a_7000_1000p.pcap"), 1),
+        Pcap(Path("mtu_flow_a_9000_1000p.pcap"), 1),
+        Pcap(Path("mtu_flow_a_9001_1000p.pcap"), 1),
     ],
 ):
     def __init__(
