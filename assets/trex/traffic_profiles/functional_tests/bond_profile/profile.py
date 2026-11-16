@@ -5,18 +5,20 @@ Copyright: (C) 2026 CESNET, z.s.p.o.
 SPDX-License-Identifier: BSD-3-Clause
 """
 
+from pathlib import Path
+
 from lbr_testsuite.trex import TRexManager
 from pytest import FixtureRequest
 
-from assets.trex.traffic_profiles.trex_client_manager import BaseTrexClientManager
+from assets.trex.traffic_profiles.trex_client_manager import BaseTrexClientManager, Pcap
 from util.trex_util import TrexMode
 
 
 class BondProfile(
     BaseTrexClientManager,
     pcaps=[
-        ("bond_flow_a_1000p.pcap", 1),
-        ("bond_flows_bcd_6000p.pcap", 1),
+        Pcap(Path("bond_flow_a_1000p.pcap"), 1),
+        Pcap(Path("bond_flows_bcd_6000p.pcap"), 1),
     ],
 ):
     def __init__(
