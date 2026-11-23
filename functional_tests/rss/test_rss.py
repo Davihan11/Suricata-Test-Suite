@@ -59,7 +59,7 @@ STAGE_PACKETS = {
 PACKET_TOLERANCE = 32
 
 
-def read_worker_stats(stats_path: str) -> dict[str, int]:
+def get_packet_placement(stats_path: str) -> dict[str, int]:
     """Read per-worker packet counts from the local eve-stats.json copy.
 
     Returns a mapping of *queue identifier* (`W#02`) to decoded packet
@@ -162,7 +162,7 @@ def test_rss(
         logger.progress(f"Stage 3 pre-pass ({pcap}): learning A's queue")
         tester.execute(pcap=pcap, single_pass=True)
         assert_total_rx(local_stats, 1)
-        reference_queues = set(read_worker_stats(local_stats))
+        reference_queues = set(get_packet_placement(local_stats))
         assert len(reference_queues) == 1, (
             f"stage 3 pre-pass: flow A expected on exactly one queue, "
             f"got {reference_queues}"
@@ -171,7 +171,7 @@ def test_rss(
 
     tester.execute(pcap=STAGE_PCAPS[stage], single_pass=True)
 
-    placement = read_worker_stats(local_stats)
+    placement = get_packet_placement(local_stats)
     total_rx = read_total_rx(local_stats)
     logger.progress(f"Stage {stage} placement: {placement} (total rx: {total_rx})")
 
