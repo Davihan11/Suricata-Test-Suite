@@ -158,8 +158,6 @@ class BaseTrexClientManager:
     # set by the `_init_*` dispatch at the end of `__init__`
     trex_version: str  # pyright: ignore[reportUninitializedInstanceVariable]
     _state: StlState | AstfState | StfState
-    _selected_pcap: str | None = None
-    _selectable_pcaps: list[Pcap] | None = None
 
     BASE_IPG_USEC = 12.0  # ~1 Gbps at 1500 bytes per packet
     PCAP_PATH_PREFIX = Path(__file__).parent / "pcaps"
@@ -313,7 +311,6 @@ class BaseTrexClientManager:
             client.set_vlan(target_vlan)
             server.set_vlan(target_vlan)
 
-        self._selectable_pcaps = list(self.pcaps)
         return AstfState(client=client, server=server)
 
     def _init_stf(
@@ -353,7 +350,6 @@ class BaseTrexClientManager:
                 force=self.trex_request.force_pcap_upload,
             )
         self.pcaps = vlanned_pcaps
-        self._selectable_pcaps = list(self.pcaps)
 
         profile_remote_path = self._refresh_stf_profile()
 
@@ -421,12 +417,12 @@ class BaseTrexClientManager:
         """
         return Path(f"/opt/trex/{self.trex_version}/pcaps") / local_path.name
 
-    def change_pcaps(self, pcaps: list[Pcap]):
-        """
-        Change selected PCAPs without uploading them to the remote.
-        Profiles and configuration files are rebuilt automatically.
+    def change_pcaps(self, pcaps: list[Pcap]) -> None:
+        """Select a subset of the original profile pcaps.
 
-        `pcaps` has to be a subset of PCAPs with which TRex was initialized.
+        STL uploads newly selected pcaps and merges multiple selections. STF
+        rebuilds and uploads its profile. ASTF uses the selection directly
+        when building its next profile.
         """
         if not pcaps:
             raise ValueError("`pcaps` cannot be empty")
@@ -438,9 +434,27 @@ class BaseTrexClientManager:
 
         self.pcaps = pcaps
 
-        if self.trex_request.mode == TrexMode.STF:
+        if self.trex_request.mode == TrexMode.STL:
+            self._prepare_stl_pcaps()
+        elif self.trex_request.mode == TrexMode.STF:
             assert isinstance(self._state, StfState)
             self._state.remote_profile = self._refresh_stf_profile()
+
+    def _prepare_stl_pcaps(self) -> None:
+        """Upload selected STL pcaps and merge them when necessary."""
+        for pcap in self.pcaps:
+            send_to_remote(
+                pcap.path,
+                self.trex_request.hostname,
+                self.get_remote_data_path(pcap.path),
+                force=self.trex_request.force_pcap_upload,
+            )
+
+        if len(self.pcaps) > 1:
+            local_paths = [p.path for p in self.pcaps]
+            weights = [float(p.weight) for p in self.pcaps]
+            merged_path = get_merged_pcap(local_paths, weights)
+            self.pcaps = [Pcap(merged_path, sum(weights))]
 
     def get_astf_profile(self, multiplier: float) -> trex_astf_profile.ASTFProfile:
         """
@@ -562,52 +576,22 @@ class BaseTrexClientManager:
 
         return profile_remote_path
 
-    @staticmethod
-    def _pcap_matches(pcap_entry: str | Path, requested: str | Path) -> bool:
-        """Match original and VLAN-tagged names of the same pcap."""
-        entry = Path(pcap_entry)
-        req = Path(requested)
-        if entry.name == req.name:
-            return True
-        return entry.stem.startswith(f"{req.stem}.vlan") or req.stem.startswith(
-            f"{entry.stem}.vlan"
-        )
-
     def set_pcap(self, pcap: str | Path) -> None:
-        """Restrict traffic to one pcap from the profile's original pcap list.
-
-        STL normally merges all pcaps during initialization, so a selected pcap
-        is uploaded separately here. STF rebuilds and uploads its profile.
-        """
-        if self._selected_pcap is not None and self._pcap_matches(
-            self._selected_pcap, pcap
-        ):
-            return
-
-        selectable = (
-            self._selectable_pcaps if self._selectable_pcaps is not None else self.pcaps
-        )
-        selected = [p for p in selectable if self._pcap_matches(p.path, pcap)]
+        """Restrict traffic to one pcap from the original profile."""
+        requested = Path(pcap)
+        selected = [
+            original
+            for original in self._available_pcaps
+            if original.path.name == requested.name
+        ]
         if not selected:
             raise ValueError(
                 f"'{pcap}' is not one of this profile's pcaps: "
-                f"{[p.path.name for p in selectable]}"
+                f"{[p.path.name for p in self._available_pcaps]}"
             )
 
-        self._selected_pcap = str(pcap)
-        self.pcaps = selected
+        self.change_pcaps(selected)
         logger.debug("TRex traffic restricted to pcap: %s", selected[0].path.name)
-
-        if self.trex_request.mode == TrexMode.STL:
-            pcap_path = selected[0].path
-            send_to_remote(
-                pcap_path,
-                self.trex_request.hostname,
-                self.get_remote_data_path(pcap_path),
-                force=self.trex_request.force_pcap_upload,
-            )
-        elif self.trex_request.mode == TrexMode.STF:
-            self._refresh_stf_profile()
 
     # --- traffic lifecycle: props, prepare, run, wait, stop ---------------
 
