@@ -259,10 +259,14 @@ class BaseTrexClientManager:
         parent_dir_path = self.get_remote_data_path(Path(""))
         mkdir_remote(parent_dir_path, self.trex_request.hostname)
 
-        # Keep individual pcaps selectable after the normal STL merge.
-        self._selectable_pcaps = list(self.pcaps)
+        # Tag each source before merging so later single-pcap selections are
+        # also VLAN-tagged. Keep the original paths for change_pcaps().
+        if target_vlan != 0:
+            self.pcaps = [
+                Pcap(Path(edit_vlan(str(pcap.path), target_vlan)), pcap.weight)
+                for pcap in self.pcaps
+            ]
 
-        # Merge first, then apply the VLAN edit to the single final pcap.
         if len(self.pcaps) > 1:
             local_paths = [p.path for p in self.pcaps]
             weights = [float(p.weight) for p in self.pcaps]
@@ -271,11 +275,6 @@ class BaseTrexClientManager:
 
         assert len(self.pcaps) == 1
         pcap = self.pcaps[0]
-
-        if target_vlan != 0:
-            vlan_path = Path(edit_vlan(str(pcap.path), target_vlan))
-            self.pcaps = [Pcap(vlan_path, pcap.weight)]
-            pcap = self.pcaps[0]
 
         logger.info("Uploading pcap to TRex server. This might take a while.")
         pcap_remote_path = self.get_remote_data_path(pcap.path)
