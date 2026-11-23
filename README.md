@@ -316,7 +316,7 @@ The test is parametrized by stage, so each stage is a separate pytest node and c
 | Stage | Replayed pcap | Assertion |
 |-------|---------------|-----------|
 | 1 | `rss_flow_a_1000p.pcap` (flow A) | flow A is handled by exactly one queue |
-| 2 | `rss_flows_bcd_6000p.pcap` (flows B/C/D) | flows spread over more than one queue |
+| 2 | `rss_flows_bcdef_10000p.pcap` (flows B/C/D/E/F) | flows spread over more than one queue |
 | 3 | `rss_flow_ra_500p.pcap` (reversed flow rA) | rA shares A's queue (symmetric RSS hash); A's reference queue is learned inline first, so the stage is standalone-safe |
 
 Full run and per-stage runs:
