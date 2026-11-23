@@ -59,8 +59,7 @@ ISN_SERVER = 1
 
 # deterministic inter-packet gaps (seconds)
 IPG_FLOW = 0.0001  # A / rA: 100 us -> 10 kpps
-IPG_BCD = 0.001  # per-flow grid in the B/C/D/E/F interleave
-BCD_FLOW_OFFSET = 0.5  # flow k starts k * offset later
+IPG_BCD = 0.001  # between packets in the B/C/D/E/F round-robin sequence
 
 # payload shaping
 BCD_DATA_LEN = 1400  # 4-byte big-endian index + X padding
@@ -127,40 +126,41 @@ def build_flow_packets(src_ip, sport, dst_ip, dport, count, tag):
 
 
 def build_bcdef_packets():
-    """Build the interleaved multi-flow pcap.
+    """Build the multi-flow pcap in packet-by-packet round-robin order.
 
-    Each of the five flows carries a handshake plus one-direction
-    data (4-byte big-endian index + X padding). Flows start
-    BCD_FLOW_OFFSET apart and are merged by timestamp, so the
-    replayed traffic overlaps in time.
+    Each flow carries a handshake followed by one-direction data. The outer
+    loop advances the packet index and the inner loop advances the flow, so
+    consecutive packets alternate between flows as documented at module level.
     """
-    flow_packets = []
+    packets = []
+    sequences = [ISN_CLIENT + 1] * len(FLOWS_BCDEF)
+    data_count = COUNT_BCDEF_PER_FLOW - 3
+
+    def emit(pkt) -> None:
+        pkt.time = len(packets) * IPG_BCD
+        packets.append(pkt)
+
     for flow_idx, (src_ip, sport, dst_ip, dport) in enumerate(FLOWS_BCDEF):
-        packets = []
-        t = flow_idx * BCD_FLOW_OFFSET
-
-        def emit(pkt):
-            nonlocal t
-            pkt.time = t
-            packets.append(pkt)
-            t += IPG_BCD
-
         emit(_frame(src_ip, sport, dst_ip, dport, "S", ISN_CLIENT, 0))
-        emit(_frame(dst_ip, dport, src_ip, sport, "SA", ISN_SERVER, ISN_CLIENT + 1))
-        emit(_frame(src_ip, sport, dst_ip, dport, "A", ISN_CLIENT + 1, ISN_SERVER + 1))
+        emit(
+            _frame(dst_ip, dport, src_ip, sport, "SA", ISN_SERVER, ISN_CLIENT + 1)
+        )
+        emit(
+            _frame(src_ip, sport, dst_ip, dport, "A", ISN_CLIENT + 1, ISN_SERVER + 1)
+        )
 
-        data_count = COUNT_BCDEF_PER_FLOW - 3
-        seq = ISN_CLIENT + 1
-        for i in range(data_count):
+    for i in range(data_count):
+        for flow_idx, (src_ip, sport, dst_ip, dport) in enumerate(FLOWS_BCDEF):
             payload = struct.pack(">I", i) + b"X" * (BCD_DATA_LEN - 4)
+            seq = sequences[flow_idx]
             emit(
-                _frame(src_ip, sport, dst_ip, dport, "PA", seq, ISN_SERVER + 1, payload)
+                _frame(
+                    src_ip, sport, dst_ip, dport, "PA", seq, ISN_SERVER + 1, payload
+                )
             )
-            seq += len(payload)
+            sequences[flow_idx] += len(payload)
 
-        flow_packets.extend(packets)
-
-    return sorted(flow_packets, key=lambda pkt: float(pkt.time))
+    return packets
 
 
 def main() -> None:
